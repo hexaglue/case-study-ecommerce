@@ -70,78 +70,86 @@ et aider a migrer.
 
 ### Description
 
-Ajout du plugin Maven HexaGlue (sans extensions, sans plugins de generation).
-Premier lancement de `hexaglue:validate` sur le code legacy brut, sans aucun `hexaglue.yaml`.
+Ajout du plugin Maven HexaGlue avec le plugin d'audit (sans extensions, sans plugins de
+generation). Premier lancement de `hexaglue:audit` sur le code legacy brut, sans aucun
+`hexaglue.yaml`, pour obtenir une baseline mesurable de l'etat architectural.
 
 ### Modifications
 
-- `pom.xml` : ajout du plugin `hexaglue-maven-plugin:5.0.0-SNAPSHOT` avec `basePackage=com.acme.shop`
+- `pom.xml` : ajout du plugin `hexaglue-maven-plugin:5.0.0-SNAPSHOT` avec `basePackage=com.acme.shop`,
+  `failOnError=false`, et `hexaglue-plugin-audit:2.0.0-SNAPSHOT` comme dependance plugin
 - Pas de `hexaglue.yaml` : on observe le comportement brut
 
 ### Resultats
 
 ```
-mvn clean compile       → BUILD SUCCESS
-mvn hexaglue:validate   → BUILD SUCCESS
+mvn clean compile     → BUILD SUCCESS
+mvn hexaglue:audit    → BUILD SUCCESS (audit FAILED attendu : 19 violations critiques)
 ```
 
-**Classification brute** (50 types parses, 24 retenus, 26 filtres automatiquement) :
+#### Verdict
 
-| Categorie | Nombre | % |
-|-----------|--------|---|
-| EXPLICIT | 9 | 37,5% |
-| INFERRED | 15 | 62,5% |
-| UNCLASSIFIED | 0 | 0,0% |
-| **Total** | **24** | 100% |
+| Score | Grade | Status |
+|:-----:|:-----:|:------:|
+| **23/100** | **F** | **FAILED** |
 
-#### 9 types EXPLICIT (tous ENTITY via @Entity JPA)
+#### KPIs (baseline legacy)
 
-| Type | Kind |
-|------|------|
-| `Customer` | ENTITY |
-| `Inventory` | ENTITY |
-| `Order` | ENTITY |
-| `OrderLine` | ENTITY |
-| `Payment` | ENTITY |
-| `Product` | ENTITY |
-| `Shipment` | ENTITY |
-| `ShippingRate` | ENTITY |
-| `StockMovement` | ENTITY |
+| Dimension | Score | Seuil | Status |
+|-----------|------:|------:|:------:|
+| DDD Compliance | 0% | 90% | CRITICAL |
+| Hexagonal Architecture | 40% | 90% | CRITICAL |
+| Dependencies | 0% | 80% | CRITICAL |
+| Coupling | 30% | 70% | CRITICAL |
+| Cohesion | 58% | 80% | CRITICAL |
 
-#### 15 types INFERRED
+#### Inventaire architectural
 
-| Type | Kind | Observation |
-|------|------|-------------|
-| `Category` | VALUE_OBJECT | Enum - correct |
-| `OrderStatus` | VALUE_OBJECT | Enum - correct |
-| `PaymentStatus` | VALUE_OBJECT | Enum - correct |
-| `CreateCustomerRequest` | VALUE_OBJECT | DTO record - faux positif |
-| `CreateOrderRequest` | VALUE_OBJECT | DTO record - faux positif |
-| `PaymentRequest` | VALUE_OBJECT | DTO record - faux positif |
-| `OrderCreatedEvent` | DOMAIN_EVENT | Spring ApplicationEvent - faux positif |
-| `CatalogService` | VALUE_OBJECT | Service Spring - faux positif |
-| `CustomerService` | VALUE_OBJECT | Service Spring - faux positif |
-| `InventoryService` | VALUE_OBJECT | Service Spring - faux positif |
-| `OrderService` | VALUE_OBJECT | Service Spring - faux positif |
-| `PaymentGatewayClient` | VALUE_OBJECT | Service Spring - faux positif |
-| `PaymentService` | VALUE_OBJECT | Service Spring - faux positif |
-| `ProductService` | VALUE_OBJECT | Service Spring - faux positif |
-| `ShippingService` | VALUE_OBJECT | Service Spring - faux positif |
+| Composant | Nombre | Observation |
+|-----------|-------:|-------------|
+| Aggregate Roots | 0 | Aucun detecte (pas de distinction aggregate/entity) |
+| Entities | 9 | Tous les @Entity JPA |
+| Value Objects | 14 | 3 enums (correct) + 8 services + 3 DTOs (faux positifs) |
+| Identifiers | 0 | Pas d'identifiants types |
+| Domain Events | 1 | OrderCreatedEvent (Spring ApplicationEvent - faux positif) |
+| Driving Ports | 0 | Aucun port driving |
+| Driven Ports | 6 | Les 6 repositories Spring Data |
 
-#### 26 types filtres automatiquement
+#### 31 violations (19 CRITICAL, 12 MAJOR)
 
-Controllers (5), Spring Data repositories (6), configs (2), exceptions (4),
-utilitaires (2), ShopApplication, BaseEntity, NotificationService, 4 DTOs response/search.
+| Contrainte | Nombre | Severite | Types concernes |
+|------------|-------:|----------|-----------------|
+| `ddd:entity-identity` | 9 | CRITICAL | 9 entites sans champ identite type (heritent de BaseEntity) |
+| `ddd:domain-purity` | 10 | CRITICAL | 9 modeles + OrderService avec imports JPA interdits |
+| `hexagonal:layer-isolation` | 12 | MAJOR | 7 services dependent directement des repositories |
+
+#### Metriques cles
+
+| Metrique | Valeur | Seuil | Status |
+|----------|-------:|------:|:------:|
+| Domain coverage | 80,00% | min 30% | OK |
+| Code boilerplate ratio | 81,58% | max 50% | CRITICAL |
+| Domain purity | 58,33% | min 100% | CRITICAL |
+| Aggregate boundary | 0,00% | min 80% | CRITICAL |
+| Code complexity | 1,11 | max 10 | OK |
+
+#### Rapports generes
+
+- `target/hexaglue/reports/audit/audit-report.json` : donnees structurees
+- `target/hexaglue/reports/audit/audit-report.html` : tableau de bord interactif
+- `target/hexaglue/reports/audit/AUDIT-REPORT.md` : rapport markdown avec diagrammes Mermaid
 
 ### Observations
 
-1. **HexaGlue detecte les @Entity JPA** et les classifie ENTITY (EXPLICIT) -- attendu mais trop plat (pas de distinction aggregate/entity/value object)
-2. **Les 8 services Spring sont mal classifies VALUE_OBJECT** : HexaGlue les voit comme des types immutables injectes dans d'autres types. C'est le principal faux positif.
-3. **3 DTOs records leakent** dans le rapport comme VALUE_OBJECT : ils devraient etre exclus.
-4. **L'event Spring est detecte** comme DOMAIN_EVENT par convention de nommage (*Event) -- faux positif car c'est un ApplicationEvent Spring, pas un domain event DDD.
-5. **Les 3 enums sont correctement VALUE_OBJECT** : Category, OrderStatus, PaymentStatus.
-6. **Les controlleurs, repos, configs sont bien filtres** automatiquement.
-7. **Conclusion** : le rapport est bruyant. Il faut exclure les services et DTOs pour avoir une vue plus claire du domaine.
+1. **Score 23/100 (Grade F)** : baseline quantifiee de l'etat legacy. Ce score servira de reference pour mesurer la progression a chaque etape.
+2. **0% DDD Compliance** : aucune structure DDD detectee (pas d'aggregats, pas d'identifiants types, pas de value objects intentionnels).
+3. **9 entites sans identite** (`ddd:entity-identity`) : les entites heritent de `BaseEntity` qui porte un `Long id` via `@MappedSuperclass`, mais HexaGlue ne reconnait pas cela comme un champ identite type.
+4. **10 violations de purete domaine** (`ddd:domain-purity`) : toutes les classes `model/` importent des annotations JPA (`jakarta.persistence.*`). L'infrastructure est melee au domaine.
+5. **12 violations d'isolation** (`hexagonal:layer-isolation`) : les services (classifies DOMAIN) dependent directement des repositories (classifies PORT). Dans une architecture hexagonale, le domaine ne devrait pas connaitre les ports.
+6. **81,58% de boilerplate** : getters, setters, constructeurs vides -- modele anemique typique.
+7. **40% Hexagonal Architecture** : HexaGlue detecte bien les 6 repositories comme driven ports, mais l'absence de driving ports et les violations de couches plombent le score.
+8. **Classification bruyante** : 8 services Spring classes VALUE_OBJECT et 3 DTOs records sont des faux positifs a nettoyer a l'etape 2.
+9. **Conclusion** : l'audit fournit une baseline chiffree precise. Les 3 familles de violations identifient clairement les axes de travail : (1) creer des identifiants types, (2) purifier le domaine des imports JPA, (3) isoler les couches via des ports.
 
 ---
 
