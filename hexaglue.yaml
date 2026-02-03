@@ -3,3 +3,20 @@ classification:
     - "com.acme.shop.infrastructure.**"
     - "com.acme.shop.application.**"
     - "com.acme.shop.exception.**"
+
+plugins:
+  io.hexaglue.plugin.jpa:
+    entitySuffix: "JpaEntity"
+    repositorySuffix: "JpaRepository"
+    adapterSuffix: "RepositoryAdapter"
+    generateRepositories: true
+    generateAdapters: true
+    generateEmbeddables: true
+    enableAuditing: false
+
+  io.hexaglue.plugin.livingdoc:
+    outputFormat: "markdown"
+    includeMetrics: true
+
+  io.hexaglue.plugin.audit.ddd:
+    failOnBlocker: false

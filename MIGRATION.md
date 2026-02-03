@@ -383,7 +383,73 @@ mvn hexaglue:validate   → BUILD SUCCESS
 
 ## Etape 5 : Generation et audit (`step/5-generated`)
 
-*A venir*
+### Description
+
+Activation des plugins HexaGlue (JPA, living-doc, audit) avec `extensions=true`.
+Toute l'infrastructure de persistence est generee automatiquement : JPA entities, embeddables,
+Spring Data repositories, MapStruct mappers, et driven port adapters.
+
+### Modifications
+
+- **`pom.xml`** : ajout `<extensions>true</extensions>`, `<failOnError>false</failOnError>`,
+  et 3 plugins en dependencies (hexaglue-plugin-jpa, hexaglue-plugin-living-doc, hexaglue-plugin-audit)
+- **`hexaglue.yaml`** : ajout section `plugins:` avec cles fully-qualified
+  (`io.hexaglue.plugin.jpa`, `io.hexaglue.plugin.livingdoc`, `io.hexaglue.plugin.audit.ddd`)
+  et `enableAuditing: false` pour eviter les champs d'audit dupliques
+
+### Code genere (29 fichiers par HexaGlue + 6 MapStruct impl)
+
+| Type | Fichiers | Exemples |
+|------|----------|----------|
+| JPA Entities | 8 | `CustomerJpaEntity`, `OrderJpaEntity`, `OrderLineJpaEntity`, `StockMovementJpaEntity` |
+| Embeddables | 2 | `MoneyEmbeddable`, `AddressEmbeddable` |
+| Spring Data Repos | 6 | `CustomerJpaRepository`, `OrderJpaRepository` |
+| MapStruct Mappers | 6 (+6 impl) | `CustomerMapper` -> `CustomerMapperImpl` |
+| Port Adapters | 7 | `CustomerRepositoryAdapter`, `OrderRepositoryAdapter` |
+
+### Resultats
+
+```
+mvn clean compile       → BUILD SUCCESS (97 source files : 68 manuels + 29 generes)
+mvn clean verify        → BUILD SUCCESS
+```
+
+**Audit** :
+
+| KPI | Score | Seuil | Status |
+|-----|-------|-------|--------|
+| DDD Compliance | 100% | 90% | PASS |
+| Hexagonal Architecture | 100% | 90% | PASS |
+| Dependencies | 0% | 80% | WARN |
+| Coupling | 24% | 70% | WARN |
+| Cohesion | 65% | 80% | INFO |
+| **Score global** | **63/100** | - | **Grade D** |
+| **Violations** | **0** | - | **PASS** |
+
+**Rapports generes** :
+
+- `target/hexaglue/reports/audit/audit-report.html` (rapport HTML interactif)
+- `target/hexaglue/reports/audit/AUDIT-REPORT.md` (rapport Markdown)
+- `target/hexaglue/reports/living-doc/README.md` (documentation architecture)
+- `target/hexaglue/reports/living-doc/domain.md` (modele domaine)
+- `target/hexaglue/reports/living-doc/ports.md` (ports driving/driven)
+- `target/hexaglue/reports/living-doc/diagrams.md` (diagrammes)
+
+### Observations
+
+1. **29 fichiers generes automatiquement** remplacent les ~31 fichiers d'infrastructure manuelle
+   que l'on aurait du ecrire a la main (cf. step 4 de l'ancienne migration)
+2. **0 fichier d'infrastructure manuelle** pour la persistence -- tout est genere
+3. **DDD Compliance 100%** et **Hexagonal Architecture 100%** : l'architecture est validee
+4. **Score 63/100 (Grade D)** : les KPIs Dependencies et Coupling sont bas car l'application
+   a un couplage natural entre ses sous-domaines (Order depend de Customer, Product, etc.)
+5. **0 violations** : aucun probleme d'architecture detecte
+6. **`enableAuditing: false`** : evite la generation de champs `createdAt`/`updatedAt` dupliques
+   (les classes domaine n'ont pas de champs d'audit, c'est intentionnel)
+7. **MapStruct integre automatiquement** : le lifecycle participant de HexaGlue injecte MapStruct
+   quand le plugin JPA est present + `extensions=true`
+8. **Conclusion** : l'infrastructure est entierement generee. Il reste a verifier que l'application
+   fonctionne de bout en bout (etape 6).
 
 ---
 

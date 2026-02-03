@@ -22,6 +22,8 @@
 
     <properties>
         <java.version>17</java.version>
+        <hexaglue.version>5.0.0-SNAPSHOT</hexaglue.version>
+        <hexaglue-plugins.version>2.0.0-SNAPSHOT</hexaglue-plugins.version>
     </properties>
 
     <dependencies>
@@ -67,10 +69,30 @@
             <plugin>
                 <groupId>io.hexaglue</groupId>
                 <artifactId>hexaglue-maven-plugin</artifactId>
-                <version>5.0.0-SNAPSHOT</version>
+                <version>${hexaglue.version}</version>
+                <extensions>true</extensions>
                 <configuration>
                     <basePackage>com.acme.shop</basePackage>
+                    <failOnUnclassified>true</failOnUnclassified>
+                    <failOnError>false</failOnError>
                 </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>io.hexaglue.plugins</groupId>
+                        <artifactId>hexaglue-plugin-jpa</artifactId>
+                        <version>${hexaglue-plugins.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>io.hexaglue.plugins</groupId>
+                        <artifactId>hexaglue-plugin-living-doc</artifactId>
+                        <version>${hexaglue-plugins.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>io.hexaglue.plugins</groupId>
+                        <artifactId>hexaglue-plugin-audit</artifactId>
+                        <version>${hexaglue-plugins.version}</version>
+                    </dependency>
+                </dependencies>
             </plugin>
         </plugins>
     </build>
