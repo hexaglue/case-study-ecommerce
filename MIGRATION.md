@@ -147,7 +147,56 @@ utilitaires (2), ShopApplication, BaseEntity, NotificationService, 4 DTOs respon
 
 ## Etape 2 : Configuration et exclusions (`step/2-configured`)
 
-*A venir*
+### Description
+
+Creation de `hexaglue.yaml` avec des exclusions minimales pour nettoyer les faux positifs
+identifies a l'etape 1. **Aucune classification explicite** -- on laisse HexaGlue inferer.
+
+### Modifications
+
+- `hexaglue.yaml` (nouveau) : exclusion des services (`com.acme.shop.service.*`) et de l'event Spring (`com.acme.shop.event.*`)
+
+### Resultats
+
+```
+mvn hexaglue:validate   → BUILD SUCCESS
+```
+
+**Rapport apres exclusions** (15 types, contre 24 a l'etape 1) :
+
+| Categorie | Nombre | % | Delta vs step 1 |
+|-----------|--------|---|------------------|
+| EXPLICIT | 9 | 60,0% | = |
+| INFERRED | 6 | 40,0% | -9 |
+| UNCLASSIFIED | 0 | 0,0% | = |
+| **Total** | **15** | 100% | -9 |
+
+#### Types retenus
+
+| Type | Kind | Certainty | Observation |
+|------|------|-----------|-------------|
+| `Customer` | ENTITY | EXPLICIT | @Entity JPA |
+| `Inventory` | ENTITY | EXPLICIT | @Entity JPA |
+| `Order` | ENTITY | EXPLICIT | @Entity JPA |
+| `OrderLine` | ENTITY | EXPLICIT | @Entity JPA |
+| `Payment` | ENTITY | EXPLICIT | @Entity JPA |
+| `Product` | ENTITY | EXPLICIT | @Entity JPA |
+| `Shipment` | ENTITY | EXPLICIT | @Entity JPA |
+| `ShippingRate` | ENTITY | EXPLICIT | @Entity JPA |
+| `StockMovement` | ENTITY | EXPLICIT | @Entity JPA |
+| `Category` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Enum - correct |
+| `OrderStatus` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Enum - correct |
+| `PaymentStatus` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Enum - correct |
+| `CreateCustomerRequest` | VALUE_OBJECT | INFERRED | DTO record - faux positif |
+| `CreateOrderRequest` | VALUE_OBJECT | INFERRED | DTO record - faux positif |
+| `PaymentRequest` | VALUE_OBJECT | INFERRED | DTO record - faux positif |
+
+### Observations
+
+1. **Les 8 services et 1 event sont exclus** -- le rapport est plus propre
+2. **3 DTOs records persistent** : les records du package `dto` sont vus comme VALUE_OBJECT par HexaGlue. Ce sont des records sans identite, donc structurellement des value objects. Pas genant pour l'instant.
+3. **La classification reste plate** : tous les types domaine sont ENTITY (a cause de @Entity JPA). HexaGlue ne peut pas distinguer les agregats des entites enfants.
+4. **Conclusion** : les exclusions nettoient le bruit mais le probleme structurel reste -- il faut reorganiser en architecture hexagonale (etape 3) et purifier le domaine (etape 4) pour que l'inference DDD fonctionne.
 
 ---
 

@@ -1,0 +1,4 @@
+classification:
+  exclude:
+    - "com.acme.shop.service.*"
+    - "com.acme.shop.event.*"
