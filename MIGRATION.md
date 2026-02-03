@@ -68,7 +68,80 @@ et aider a migrer.
 
 ## Etape 1 : Decouverte avec HexaGlue (`step/1-discovery`)
 
-*A venir*
+### Description
+
+Ajout du plugin Maven HexaGlue (sans extensions, sans plugins de generation).
+Premier lancement de `hexaglue:validate` sur le code legacy brut, sans aucun `hexaglue.yaml`.
+
+### Modifications
+
+- `pom.xml` : ajout du plugin `hexaglue-maven-plugin:5.0.0-SNAPSHOT` avec `basePackage=com.acme.shop`
+- Pas de `hexaglue.yaml` : on observe le comportement brut
+
+### Resultats
+
+```
+mvn clean compile       → BUILD SUCCESS
+mvn hexaglue:validate   → BUILD SUCCESS
+```
+
+**Classification brute** (50 types parses, 24 retenus, 26 filtres automatiquement) :
+
+| Categorie | Nombre | % |
+|-----------|--------|---|
+| EXPLICIT | 9 | 37,5% |
+| INFERRED | 15 | 62,5% |
+| UNCLASSIFIED | 0 | 0,0% |
+| **Total** | **24** | 100% |
+
+#### 9 types EXPLICIT (tous ENTITY via @Entity JPA)
+
+| Type | Kind |
+|------|------|
+| `Customer` | ENTITY |
+| `Inventory` | ENTITY |
+| `Order` | ENTITY |
+| `OrderLine` | ENTITY |
+| `Payment` | ENTITY |
+| `Product` | ENTITY |
+| `Shipment` | ENTITY |
+| `ShippingRate` | ENTITY |
+| `StockMovement` | ENTITY |
+
+#### 15 types INFERRED
+
+| Type | Kind | Observation |
+|------|------|-------------|
+| `Category` | VALUE_OBJECT | Enum - correct |
+| `OrderStatus` | VALUE_OBJECT | Enum - correct |
+| `PaymentStatus` | VALUE_OBJECT | Enum - correct |
+| `CreateCustomerRequest` | VALUE_OBJECT | DTO record - faux positif |
+| `CreateOrderRequest` | VALUE_OBJECT | DTO record - faux positif |
+| `PaymentRequest` | VALUE_OBJECT | DTO record - faux positif |
+| `OrderCreatedEvent` | DOMAIN_EVENT | Spring ApplicationEvent - faux positif |
+| `CatalogService` | VALUE_OBJECT | Service Spring - faux positif |
+| `CustomerService` | VALUE_OBJECT | Service Spring - faux positif |
+| `InventoryService` | VALUE_OBJECT | Service Spring - faux positif |
+| `OrderService` | VALUE_OBJECT | Service Spring - faux positif |
+| `PaymentGatewayClient` | VALUE_OBJECT | Service Spring - faux positif |
+| `PaymentService` | VALUE_OBJECT | Service Spring - faux positif |
+| `ProductService` | VALUE_OBJECT | Service Spring - faux positif |
+| `ShippingService` | VALUE_OBJECT | Service Spring - faux positif |
+
+#### 26 types filtres automatiquement
+
+Controllers (5), Spring Data repositories (6), configs (2), exceptions (4),
+utilitaires (2), ShopApplication, BaseEntity, NotificationService, 4 DTOs response/search.
+
+### Observations
+
+1. **HexaGlue detecte les @Entity JPA** et les classifie ENTITY (EXPLICIT) -- attendu mais trop plat (pas de distinction aggregate/entity/value object)
+2. **Les 8 services Spring sont mal classifies VALUE_OBJECT** : HexaGlue les voit comme des types immutables injectes dans d'autres types. C'est le principal faux positif.
+3. **3 DTOs records leakent** dans le rapport comme VALUE_OBJECT : ils devraient etre exclus.
+4. **L'event Spring est detecte** comme DOMAIN_EVENT par convention de nommage (*Event) -- faux positif car c'est un ApplicationEvent Spring, pas un domain event DDD.
+5. **Les 3 enums sont correctement VALUE_OBJECT** : Category, OrderStatus, PaymentStatus.
+6. **Les controlleurs, repos, configs sont bien filtres** automatiquement.
+7. **Conclusion** : le rapport est bruyant. Il faut exclure les services et DTOs pour avoir une vue plus claire du domaine.
 
 ---
 
