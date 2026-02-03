@@ -1,7 +1,9 @@
 package com.acme.shop.infrastructure.web;
 
+import com.acme.shop.domain.order.Money;
 import com.acme.shop.domain.product.Category;
 import com.acme.shop.domain.product.Product;
+import com.acme.shop.domain.product.ProductId;
 import com.acme.shop.ports.in.CatalogUseCases;
 import com.acme.shop.ports.in.ProductUseCases;
 import java.math.BigDecimal;
@@ -34,23 +36,25 @@ public class ProductController {
         if (price.compareTo(BigDecimal.ZERO) <= 0) {
             return ResponseEntity.badRequest().build();
         }
-        Product product = productUseCases.createProduct(name, description, price, currency, sku, category);
+        Product product = productUseCases.createProduct(name, description, Money.of(price, currency), sku, category);
         return ResponseEntity.status(HttpStatus.CREATED).body(product);
     }
 
     @PutMapping("/{id}/price")
-    public ResponseEntity<Product> updatePrice(@PathVariable Long id, @RequestParam BigDecimal price) {
-        return ResponseEntity.ok(productUseCases.updatePrice(id, price));
+    public ResponseEntity<Product> updatePrice(
+            @PathVariable Long id, @RequestParam BigDecimal price,
+            @RequestParam(defaultValue = "EUR") String currency) {
+        return ResponseEntity.ok(productUseCases.updatePrice(new ProductId(id), Money.of(price, currency)));
     }
 
     @PutMapping("/{id}/deactivate")
     public ResponseEntity<Product> deactivate(@PathVariable Long id) {
-        return ResponseEntity.ok(productUseCases.deactivate(id));
+        return ResponseEntity.ok(productUseCases.deactivate(new ProductId(id)));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Product> getProduct(@PathVariable Long id) {
-        return ResponseEntity.ok(productUseCases.getProduct(id));
+        return ResponseEntity.ok(productUseCases.getProduct(new ProductId(id)));
     }
 
     @GetMapping

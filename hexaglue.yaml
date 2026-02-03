@@ -2,3 +2,4 @@ classification:
   exclude:
     - "com.acme.shop.infrastructure.**"
     - "com.acme.shop.application.**"
+    - "com.acme.shop.exception.**"

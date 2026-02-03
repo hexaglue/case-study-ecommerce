@@ -1,6 +1,10 @@
 package com.acme.shop.application;
 
+import com.acme.shop.domain.order.Address;
+import com.acme.shop.domain.order.Money;
 import com.acme.shop.domain.order.Order;
+import com.acme.shop.domain.order.OrderId;
+import com.acme.shop.domain.order.OrderLine;
 import com.acme.shop.domain.order.OrderStatus;
 import com.acme.shop.domain.shipping.Shipment;
 import com.acme.shop.ports.in.InventoryUseCases;
@@ -8,7 +12,6 @@ import com.acme.shop.ports.in.ShippingUseCases;
 import com.acme.shop.ports.out.OrderRepository;
 import com.acme.shop.ports.out.ShipmentRepository;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +34,7 @@ public class ShippingApplicationService implements ShippingUseCases {
     }
 
     @Override
-    public Shipment createShipment(Long orderId, String carrier) {
+    public Shipment createShipment(OrderId orderId, String carrier) {
         Order order = orderRepository
                 .findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
@@ -40,18 +43,13 @@ public class ShippingApplicationService implements ShippingUseCases {
             throw new IllegalStateException("Order must be PAID to create shipment");
         }
 
-        Shipment shipment = new Shipment();
-        shipment.setTrackingNumber("TRACK-" + UUID.randomUUID().toString().substring(0, 10).toUpperCase());
-        shipment.setOrder(order);
-        shipment.setCarrier(carrier);
-        shipment.setStatus(Shipment.ShipmentStatus.PENDING);
-        shipment.setShippingCost(calculateShippingCost(order));
-        shipment.setCurrency(order.getCurrency());
-        shipment.setDestinationStreet(order.getShippingStreet());
-        shipment.setDestinationCity(order.getShippingCity());
-        shipment.setDestinationZipCode(order.getShippingZipCode());
-        shipment.setDestinationCountry(order.getShippingCountry());
+        String trackingNumber = "TRACK-" + UUID.randomUUID().toString().substring(0, 10).toUpperCase();
+        Money shippingCost = Money.of(
+                BigDecimal.valueOf(5.99).multiply(BigDecimal.valueOf(order.getLines().size())),
+                order.getTotalAmount().currency());
+        Address destination = order.getShippingAddress();
 
+        Shipment shipment = Shipment.create(trackingNumber, orderId, carrier, shippingCost, destination);
         return shipmentRepository.save(shipment);
     }
 
@@ -61,19 +59,16 @@ public class ShippingApplicationService implements ShippingUseCases {
                 .findByTrackingNumber(trackingNumber)
                 .orElseThrow(() -> new IllegalArgumentException("Shipment not found: " + trackingNumber));
 
-        if (shipment.getStatus() != Shipment.ShipmentStatus.PENDING) {
-            throw new IllegalStateException("Shipment must be PENDING to ship");
+        Order order = orderRepository
+                .findById(shipment.getOrderId())
+                .orElseThrow(() -> new IllegalStateException("Order not found for shipment"));
+
+        for (OrderLine line : order.getLines()) {
+            inventoryUseCases.shipStock(line.getProductId(), line.getQuantity().value());
         }
 
-        shipment.getOrder().getLines().forEach(line ->
-                inventoryUseCases.shipStock(line.getProduct().getId(), line.getQuantity()));
-
-        shipment.setStatus(Shipment.ShipmentStatus.IN_TRANSIT);
-        shipment.setShippedAt(LocalDateTime.now());
-
-        Order order = shipment.getOrder();
-        order.setStatus(OrderStatus.SHIPPED);
-        order.setShippedAt(LocalDateTime.now());
+        shipment.ship();
+        order.markShipped();
         orderRepository.save(order);
 
         return shipmentRepository.save(shipment);
@@ -85,18 +80,14 @@ public class ShippingApplicationService implements ShippingUseCases {
                 .findByTrackingNumber(trackingNumber)
                 .orElseThrow(() -> new IllegalArgumentException("Shipment not found: " + trackingNumber));
 
-        shipment.setStatus(Shipment.ShipmentStatus.DELIVERED);
-        shipment.setDeliveredAt(LocalDateTime.now());
+        Order order = orderRepository
+                .findById(shipment.getOrderId())
+                .orElseThrow(() -> new IllegalStateException("Order not found for shipment"));
 
-        Order order = shipment.getOrder();
-        order.setStatus(OrderStatus.DELIVERED);
-        order.setDeliveredAt(LocalDateTime.now());
+        shipment.markDelivered();
+        order.markDelivered();
         orderRepository.save(order);
 
         return shipmentRepository.save(shipment);
-    }
-
-    private BigDecimal calculateShippingCost(Order order) {
-        return BigDecimal.valueOf(5.99).multiply(BigDecimal.valueOf(order.getLines().size()));
     }
 }

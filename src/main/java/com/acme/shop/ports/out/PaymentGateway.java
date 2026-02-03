@@ -1,9 +1,9 @@
 package com.acme.shop.ports.out;
 
-import java.math.BigDecimal;
+import com.acme.shop.domain.order.Money;
 
 public interface PaymentGateway {
-    boolean authorize(String paymentReference, BigDecimal amount, String currency, String paymentMethod);
-    boolean capture(String paymentReference, BigDecimal amount);
-    boolean refund(String paymentReference, BigDecimal amount);
+    boolean authorize(String paymentReference, Money amount, String paymentMethod);
+    boolean capture(String paymentReference, Money amount);
+    boolean refund(String paymentReference, Money amount);
 }

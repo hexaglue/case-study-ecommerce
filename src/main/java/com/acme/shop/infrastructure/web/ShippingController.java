@@ -1,5 +1,6 @@
 package com.acme.shop.infrastructure.web;
 
+import com.acme.shop.domain.order.OrderId;
 import com.acme.shop.domain.shipping.Shipment;
 import com.acme.shop.ports.in.ShippingUseCases;
 import org.springframework.http.HttpStatus;
@@ -19,7 +20,8 @@ public class ShippingController {
     @PostMapping
     public ResponseEntity<Shipment> createShipment(
             @RequestParam Long orderId, @RequestParam(defaultValue = "DHL") String carrier) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(shippingUseCases.createShipment(orderId, carrier));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(shippingUseCases.createShipment(new OrderId(orderId), carrier));
     }
 
     @PostMapping("/{trackingNumber}/ship")

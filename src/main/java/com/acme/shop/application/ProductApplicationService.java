@@ -1,10 +1,11 @@
 package com.acme.shop.application;
 
+import com.acme.shop.domain.order.Money;
 import com.acme.shop.domain.product.Category;
 import com.acme.shop.domain.product.Product;
+import com.acme.shop.domain.product.ProductId;
 import com.acme.shop.ports.in.ProductUseCases;
 import com.acme.shop.ports.out.ProductRepository;
-import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,42 +21,32 @@ public class ProductApplicationService implements ProductUseCases {
     }
 
     @Override
-    public Product createProduct(String name, String description, BigDecimal price, String currency, String sku, Category category) {
+    public Product createProduct(String name, String description, Money price, String sku, Category category) {
         if (productRepository.findBySku(sku).isPresent()) {
             throw new IllegalArgumentException("SKU already exists: " + sku);
         }
-        Product product = new Product(name, price, currency, sku, category);
-        product.setDescription(description);
+        Product product = Product.create(name, description, price, sku, category);
         return productRepository.save(product);
     }
 
     @Override
-    public Product updatePrice(Long productId, BigDecimal newPrice) {
-        Product product = productRepository
-                .findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found: " + productId));
-        if (newPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Price must be positive");
-        }
-        product.setPrice(newPrice);
+    public Product updatePrice(ProductId productId, Money newPrice) {
+        Product product = findProductOrThrow(productId);
+        product.updatePrice(newPrice);
         return productRepository.save(product);
     }
 
     @Override
-    public Product deactivate(Long productId) {
-        Product product = productRepository
-                .findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found: " + productId));
-        product.setActive(false);
+    public Product deactivate(ProductId productId) {
+        Product product = findProductOrThrow(productId);
+        product.deactivate();
         return productRepository.save(product);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Product getProduct(Long productId) {
-        return productRepository
-                .findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("Product not found: " + productId));
+    public Product getProduct(ProductId productId) {
+        return findProductOrThrow(productId);
     }
 
     @Override
@@ -74,5 +65,11 @@ public class ProductApplicationService implements ProductUseCases {
     @Transactional(readOnly = true)
     public List<Product> searchByName(String name) {
         return productRepository.findByNameContainingIgnoreCase(name);
+    }
+
+    private Product findProductOrThrow(ProductId productId) {
+        return productRepository
+                .findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("Product not found: " + productId));
     }
 }

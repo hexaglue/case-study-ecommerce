@@ -1,5 +1,6 @@
 package com.acme.shop.infrastructure.web;
 
+import com.acme.shop.domain.order.OrderId;
 import com.acme.shop.domain.payment.Payment;
 import com.acme.shop.infrastructure.web.dto.PaymentRequest;
 import com.acme.shop.ports.in.PaymentUseCases;
@@ -19,7 +20,8 @@ public class PaymentController {
 
     @PostMapping
     public ResponseEntity<Payment> processPayment(@Valid @RequestBody PaymentRequest request) {
-        Payment payment = paymentUseCases.processPayment(request.orderId(), request.paymentMethod());
+        Payment payment = paymentUseCases.processPayment(
+                new OrderId(request.orderId()), request.paymentMethod());
         return ResponseEntity.ok(payment);
     }
 

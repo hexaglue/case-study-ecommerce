@@ -1,66 +1,49 @@
 package com.acme.shop.domain.product;
 
-import com.acme.shop.domain.shared.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Table;
-import java.math.BigDecimal;
+import com.acme.shop.domain.order.Money;
 
-@Entity
-@Table(name = "products")
-public class Product extends BaseEntity {
+public class Product {
 
-    @Column(nullable = false)
-    private String name;
-
-    @Column(length = 2000)
+    private ProductId id;
+    private final String name;
     private String description;
+    private Money price;
+    private final String sku;
+    private final Category category;
+    private boolean active;
 
-    @Column(nullable = false, precision = 10, scale = 2)
-    private BigDecimal price;
-
-    @Column(nullable = false)
-    private String currency;
-
-    @Column(nullable = false, unique = true)
-    private String sku;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Category category;
-
-    private boolean active = true;
-
-    public Product() {}
-
-    public Product(String name, BigDecimal price, String currency, String sku, Category category) {
+    public Product(ProductId id, String name, String description, Money price,
+                   String sku, Category category, boolean active) {
+        this.id = id;
         this.name = name;
+        this.description = description;
         this.price = price;
-        this.currency = currency;
         this.sku = sku;
         this.category = category;
+        this.active = active;
     }
 
+    public static Product create(String name, String description, Money price, String sku, Category category) {
+        return new Product(null, name, description, price, sku, category, true);
+    }
+
+    public void updatePrice(Money newPrice) {
+        if (newPrice.amount().signum() <= 0) {
+            throw new IllegalArgumentException("Price must be positive");
+        }
+        this.price = newPrice;
+    }
+
+    public void deactivate() {
+        this.active = false;
+    }
+
+    public ProductId getId() { return id; }
+    public void setId(ProductId id) { this.id = id; }
     public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-
     public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-
-    public BigDecimal getPrice() { return price; }
-    public void setPrice(BigDecimal price) { this.price = price; }
-
-    public String getCurrency() { return currency; }
-    public void setCurrency(String currency) { this.currency = currency; }
-
+    public Money getPrice() { return price; }
     public String getSku() { return sku; }
-    public void setSku(String sku) { this.sku = sku; }
-
     public Category getCategory() { return category; }
-    public void setCategory(Category category) { this.category = category; }
-
     public boolean isActive() { return active; }
-    public void setActive(boolean active) { this.active = active; }
 }

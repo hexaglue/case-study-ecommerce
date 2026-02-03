@@ -1,5 +1,10 @@
 package com.acme.shop.infrastructure.web;
 
+import com.acme.shop.domain.customer.CustomerId;
+import com.acme.shop.domain.order.Address;
+import com.acme.shop.domain.order.Order;
+import com.acme.shop.domain.order.OrderId;
+import com.acme.shop.domain.product.ProductId;
 import com.acme.shop.infrastructure.web.dto.CreateOrderRequest;
 import com.acme.shop.infrastructure.web.dto.OrderResponse;
 import com.acme.shop.ports.in.OrderUseCases;
@@ -21,12 +26,27 @@ public class OrderController {
 
     @PostMapping
     public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(orderUseCases.createOrder(request));
+        List<OrderUseCases.LineItemCommand> items = request.items().stream()
+                .map(item -> new OrderUseCases.LineItemCommand(
+                        new ProductId(item.productId()), item.quantity()))
+                .toList();
+
+        Address shippingAddress = null;
+        if (request.shippingStreet() != null) {
+            shippingAddress = new Address(
+                    request.shippingStreet(), request.shippingCity(),
+                    request.shippingZipCode(), request.shippingCountry());
+        }
+
+        Order order = orderUseCases.createOrder(
+                new CustomerId(request.customerId()), items, shippingAddress);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(order));
     }
 
     @PostMapping("/{id}/place")
     public ResponseEntity<OrderResponse> placeOrder(@PathVariable Long id) {
-        return ResponseEntity.ok(orderUseCases.placeOrder(id));
+        Order order = orderUseCases.placeOrder(new OrderId(id));
+        return ResponseEntity.ok(toResponse(order));
     }
 
     @PostMapping("/{id}/cancel")
@@ -35,21 +55,48 @@ public class OrderController {
         if (reason == null || reason.isBlank()) {
             reason = "Cancelled by customer";
         }
-        return ResponseEntity.ok(orderUseCases.cancelOrder(id, reason));
+        Order order = orderUseCases.cancelOrder(new OrderId(id), reason);
+        return ResponseEntity.ok(toResponse(order));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<OrderResponse> getOrder(@PathVariable Long id) {
-        return ResponseEntity.ok(orderUseCases.getOrder(id));
+        Order order = orderUseCases.getOrder(new OrderId(id));
+        return ResponseEntity.ok(toResponse(order));
     }
 
     @GetMapping("/by-number/{orderNumber}")
     public ResponseEntity<OrderResponse> getOrderByNumber(@PathVariable String orderNumber) {
-        return ResponseEntity.ok(orderUseCases.getOrderByNumber(orderNumber));
+        Order order = orderUseCases.getOrderByNumber(orderNumber);
+        return ResponseEntity.ok(toResponse(order));
     }
 
     @GetMapping("/customer/{customerId}")
     public ResponseEntity<List<OrderResponse>> getOrdersByCustomer(@PathVariable Long customerId) {
-        return ResponseEntity.ok(orderUseCases.getOrdersByCustomer(customerId));
+        List<Order> orders = orderUseCases.getOrdersByCustomer(new CustomerId(customerId));
+        return ResponseEntity.ok(orders.stream().map(this::toResponse).toList());
+    }
+
+    private OrderResponse toResponse(Order order) {
+        List<OrderResponse.LineItemResponse> lines = order.getLines().stream()
+                .map(line -> new OrderResponse.LineItemResponse(
+                        line.getProductId().value(),
+                        line.getProductName(),
+                        line.getQuantity().value(),
+                        line.getUnitPrice().amount(),
+                        line.getLineTotal().amount()))
+                .toList();
+
+        return new OrderResponse(
+                order.getId() != null ? order.getId().value() : null,
+                order.getOrderNumber(),
+                order.getCustomerId().value(),
+                null,
+                lines,
+                order.getStatus().name(),
+                order.getTotalAmount().amount(),
+                order.getTotalAmount().currency(),
+                order.getPlacedAt(),
+                null);
     }
 }

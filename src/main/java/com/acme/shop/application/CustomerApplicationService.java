@@ -1,8 +1,9 @@
 package com.acme.shop.application;
 
 import com.acme.shop.domain.customer.Customer;
-import com.acme.shop.infrastructure.web.dto.CreateCustomerRequest;
-import com.acme.shop.infrastructure.web.dto.CustomerResponse;
+import com.acme.shop.domain.customer.CustomerId;
+import com.acme.shop.domain.customer.Email;
+import com.acme.shop.domain.order.Address;
 import com.acme.shop.ports.in.CustomerUseCases;
 import com.acme.shop.ports.out.CustomerRepository;
 import java.util.List;
@@ -20,67 +21,47 @@ public class CustomerApplicationService implements CustomerUseCases {
     }
 
     @Override
-    public CustomerResponse createCustomer(CreateCustomerRequest request) {
-        if (customerRepository.existsByEmail(request.email())) {
-            throw new IllegalArgumentException("Email already in use: " + request.email());
+    public Customer createCustomer(String firstName, String lastName, Email email, String phone, Address address) {
+        if (customerRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException("Email already in use: " + email.value());
         }
 
-        if (request.email() == null || !request.email().contains("@")) {
-            throw new IllegalArgumentException("Invalid email format");
+        Customer customer = Customer.create(firstName, lastName, email);
+        if (phone != null) {
+            customer.updateProfile(firstName, lastName, phone);
+        }
+        if (address != null) {
+            customer.updateAddress(address);
         }
 
-        Customer customer = new Customer(request.firstName(), request.lastName(), request.email());
-        customer.setPhone(request.phone());
-        customer.setStreet(request.street());
-        customer.setCity(request.city());
-        customer.setZipCode(request.zipCode());
-        customer.setCountry(request.country());
-
-        return toResponse(customerRepository.save(customer));
+        return customerRepository.save(customer);
     }
 
     @Override
-    public CustomerResponse updateCustomer(Long customerId, CreateCustomerRequest request) {
+    public Customer updateCustomer(CustomerId customerId, String firstName, String lastName, String phone, Address address) {
         Customer customer = customerRepository
                 .findById(customerId)
                 .orElseThrow(() -> new IllegalArgumentException("Customer not found: " + customerId));
 
-        customer.setFirstName(request.firstName());
-        customer.setLastName(request.lastName());
-        customer.setPhone(request.phone());
-        customer.setStreet(request.street());
-        customer.setCity(request.city());
-        customer.setZipCode(request.zipCode());
-        customer.setCountry(request.country());
+        customer.updateProfile(firstName, lastName, phone);
+        if (address != null) {
+            customer.updateAddress(address);
+        }
 
-        return toResponse(customerRepository.save(customer));
+        return customerRepository.save(customer);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public CustomerResponse getCustomer(Long customerId) {
-        Customer customer = customerRepository
+    public Customer getCustomer(CustomerId customerId) {
+        return customerRepository
                 .findById(customerId)
                 .orElseThrow(() -> new IllegalArgumentException("Customer not found: " + customerId));
-        return toResponse(customer);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<CustomerResponse> getAllCustomers() {
-        return customerRepository.findAll().stream().map(this::toResponse).toList();
-    }
-
-    private CustomerResponse toResponse(Customer customer) {
-        return new CustomerResponse(
-                customer.getId(),
-                customer.getFirstName(),
-                customer.getLastName(),
-                customer.getEmail(),
-                customer.getPhone(),
-                customer.getStreet(),
-                customer.getCity(),
-                customer.getZipCode(),
-                customer.getCountry());
+    public List<Customer> getAllCustomers() {
+        return customerRepository.findAll();
     }
 }

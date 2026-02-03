@@ -1,52 +1,72 @@
 package com.acme.shop.domain.inventory;
 
-import com.acme.shop.domain.product.Product;
-import com.acme.shop.domain.shared.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.OneToOne;
-import jakarta.persistence.Table;
+import com.acme.shop.domain.product.ProductId;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
-@Entity
-@Table(name = "inventory")
-public class Inventory extends BaseEntity {
+public class Inventory {
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "product_id", nullable = false, unique = true)
-    private Product product;
-
-    @Column(nullable = false)
+    private InventoryId id;
+    private final ProductId productId;
     private int quantityOnHand;
-
-    @Column(nullable = false)
     private int reservedQuantity;
-
     private int reorderThreshold;
+    private final List<StockMovement> movements = new ArrayList<>();
 
-    @OneToMany(mappedBy = "inventory")
-    private List<StockMovement> movements = new ArrayList<>();
+    public Inventory(InventoryId id, ProductId productId, int quantityOnHand,
+                     int reservedQuantity, int reorderThreshold, List<StockMovement> movements) {
+        this.id = id;
+        this.productId = productId;
+        this.quantityOnHand = quantityOnHand;
+        this.reservedQuantity = reservedQuantity;
+        this.reorderThreshold = reorderThreshold;
+        if (movements != null) {
+            this.movements.addAll(movements);
+        }
+    }
 
-    public Inventory() {}
+    public static Inventory initialize(ProductId productId, int initialQuantity) {
+        Inventory inventory = new Inventory(null, productId, initialQuantity, 0, 10, null);
+        inventory.addMovement(StockMovement.MovementType.RECEIVED, initialQuantity, "Initial stock");
+        return inventory;
+    }
 
-    public Product getProduct() { return product; }
-    public void setProduct(Product product) { this.product = product; }
+    public void reserve(int qty) {
+        if (getAvailableQuantity() < qty) {
+            throw new IllegalStateException(
+                    "Insufficient stock for product " + productId + ": available=" + getAvailableQuantity()
+                            + ", requested=" + qty);
+        }
+        this.reservedQuantity += qty;
+        addMovement(StockMovement.MovementType.RESERVED, qty, "Order reservation");
+    }
 
+    public void release(int qty) {
+        this.reservedQuantity = Math.max(0, this.reservedQuantity - qty);
+        addMovement(StockMovement.MovementType.RELEASED, qty, "Order cancellation");
+    }
+
+    public void ship(int qty) {
+        this.quantityOnHand -= qty;
+        this.reservedQuantity = Math.max(0, this.reservedQuantity - qty);
+        addMovement(StockMovement.MovementType.SHIPPED, qty, "Order shipped");
+    }
+
+    public int getAvailableQuantity() {
+        return quantityOnHand - reservedQuantity;
+    }
+
+    private void addMovement(StockMovement.MovementType type, int quantity, String reason) {
+        movements.add(StockMovement.create(type, quantity, reason));
+    }
+
+    public InventoryId getId() { return id; }
+    public void setId(InventoryId id) { this.id = id; }
+    public ProductId getProductId() { return productId; }
     public int getQuantityOnHand() { return quantityOnHand; }
-    public void setQuantityOnHand(int quantityOnHand) { this.quantityOnHand = quantityOnHand; }
-
     public int getReservedQuantity() { return reservedQuantity; }
-    public void setReservedQuantity(int reservedQuantity) { this.reservedQuantity = reservedQuantity; }
-
     public int getReorderThreshold() { return reorderThreshold; }
-    public void setReorderThreshold(int reorderThreshold) { this.reorderThreshold = reorderThreshold; }
-
-    public List<StockMovement> getMovements() { return movements; }
-    public void setMovements(List<StockMovement> movements) { this.movements = movements; }
-
-    public int getAvailableQuantity() { return quantityOnHand - reservedQuantity; }
+    public List<StockMovement> getMovements() { return Collections.unmodifiableList(movements); }
 }

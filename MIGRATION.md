@@ -281,7 +281,103 @@ mvn hexaglue:validate   → BUILD SUCCESS
 
 ## Etape 4 : Purification du domaine (`step/4-pure-domain`)
 
-*A venir*
+### Description
+
+Domaine pur sans annotations JPA. Value objects (records). Identifiants types (records wrappant Long).
+Logique metier dans les agregats. References inter-agregats par ID uniquement.
+Pas d'infrastructure manuelle -- l'application compile mais ne peut pas demarrer (pas de persistence).
+
+### Modifications
+
+- **6 identifiants types** (records) : `OrderId`, `CustomerId`, `ProductId`, `PaymentId`, `ShipmentId`, `InventoryId` -- wrappent `Long`
+- **4 value objects** (records) : `Money(BigDecimal, String)`, `Address(String, String, String, String)`, `Email(String)`, `Quantity(int)`
+- **1 domain event** (record) : `OrderPlacedEvent(OrderId, CustomerId, Money, Instant)`
+- **9 classes domaine purifiees** : suppression de toutes les annotations JPA, suppression de `extends BaseEntity`, remplacement des setters par des methodes metier
+- **`ShippingRate` transforme en record** (value object)
+- **`BaseEntity` supprimee** (plus necessaire)
+- **6 JPA repositories supprimes** (plus d'@Entity = plus de Spring Data direct)
+- **`OrderCreatedEvent` Spring supprime** (remplace par `OrderPlacedEvent` domaine)
+- **15 port interfaces mises a jour** avec identifiants types
+- **7 application services refactores** : utilisent les factory methods et methodes metier
+- **5 controllers adaptes** : mapping DTO <-> types domaine
+- **2 adapters infrastructure mis a jour** : `PaymentGatewayAdapter`, `NotificationAdapter`
+- **`hexaglue.yaml`** : ajout exclusion `com.acme.shop.exception.**`
+
+### Structure des packages (domaine purifie)
+
+```
+com.acme.shop/
+├── domain/
+│   ├── order/        (Order, OrderLine, OrderId, OrderStatus, Money, Address, Quantity, OrderPlacedEvent)
+│   ├── customer/     (Customer, CustomerId, Email)
+│   ├── product/      (Product, ProductId, Category)
+│   ├── inventory/    (Inventory, InventoryId, StockMovement)
+│   ├── payment/      (Payment, PaymentId, PaymentStatus)
+│   └── shipping/     (Shipment, ShipmentId, ShippingRate)
+├── ports/
+│   ├── in/           (7 driving ports avec types domaine)
+│   └── out/          (8 driven ports avec identifiants types)
+├── application/      (7 services -- exclus de HexaGlue)
+├── exception/        (4 classes -- exclus de HexaGlue)
+└── infrastructure/   (web, external -- exclus de HexaGlue)
+```
+
+### Resultats
+
+```
+mvn clean compile       → BUILD SUCCESS (68 source files)
+mvn hexaglue:validate   → BUILD SUCCESS
+```
+
+**Classification** (22 types domaine + 15 ports) :
+
+| Categorie | Nombre | % | Delta vs step 3 |
+|-----------|--------|---|------------------|
+| EXPLICIT | 0 | 0,0% | -9 |
+| INFERRED | 22 | 100,0% | +19 |
+| UNCLASSIFIED | 0 | 0,0% | = |
+| **Total** | **22** | 100% | +10 |
+| **Ports** | **15** | - | = |
+| **Conflicts** | **0** | - | = |
+
+#### Classification par role DDD (22 types, 100% INFERRED)
+
+| Type | Kind | Certainty | Reasoning |
+|------|------|-----------|-----------|
+| `Customer` | AGGREGATE_ROOT | CERTAIN_BY_STRUCTURE | Dominant type in repository [CustomerRepository], has identity field 'id' |
+| `Inventory` | AGGREGATE_ROOT | CERTAIN_BY_STRUCTURE | Dominant type in repository [InventoryRepository], has identity field 'id' |
+| `Order` | AGGREGATE_ROOT | CERTAIN_BY_STRUCTURE | Dominant type in repository [OrderRepository], has identity field 'id' |
+| `Payment` | AGGREGATE_ROOT | CERTAIN_BY_STRUCTURE | Dominant type in repository [PaymentRepository], has identity field 'id' |
+| `Product` | AGGREGATE_ROOT | CERTAIN_BY_STRUCTURE | Dominant type in repository [ProductRepository], has identity field 'id' |
+| `Shipment` | AGGREGATE_ROOT | CERTAIN_BY_STRUCTURE | Dominant type in repository [ShipmentRepository], has identity field 'id' |
+| `CustomerId` | IDENTIFIER | CERTAIN_BY_STRUCTURE | Record with single component wrapping Long |
+| `InventoryId` | IDENTIFIER | CERTAIN_BY_STRUCTURE | Record with single component wrapping Long |
+| `OrderId` | IDENTIFIER | CERTAIN_BY_STRUCTURE | Record with single component wrapping Long |
+| `PaymentId` | IDENTIFIER | CERTAIN_BY_STRUCTURE | Record with single component wrapping Long |
+| `ProductId` | IDENTIFIER | CERTAIN_BY_STRUCTURE | Record with single component wrapping Long |
+| `ShipmentId` | IDENTIFIER | CERTAIN_BY_STRUCTURE | Record with single component wrapping Long |
+| `OrderLine` | ENTITY | CERTAIN_BY_STRUCTURE | Class with identity contained in aggregate Order |
+| `StockMovement` | ENTITY | CERTAIN_BY_STRUCTURE | Class with identity contained in aggregate Inventory |
+| `Address` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Immutable type embedded in aggregates |
+| `Email` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Immutable type embedded in aggregates |
+| `Money` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Immutable type embedded in aggregates |
+| `Quantity` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Immutable type embedded in aggregates |
+| `Category` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Enum type |
+| `OrderStatus` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Enum type |
+| `PaymentStatus` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Enum type |
+| `OrderPlacedEvent` | DOMAIN_EVENT | INFERRED | Naming convention (*Event) |
+
+### Observations
+
+1. **0% EXPLICIT, 100% INFERRED** : le domaine pur permet a HexaGlue d'inferer correctement tous les roles DDD sans aucune classification explicite
+2. **6 AGGREGATE_ROOT detectes** via la correlation types-repositories : chaque type dominant d'un repository est un aggregate root
+3. **6 IDENTIFIER detectes** via la structure des records wrappant Long
+4. **2 ENTITY detectees** (OrderLine, StockMovement) : classes avec identite contenues dans un agregat
+5. **7 VALUE_OBJECT detectes** : 4 records immutables (Address, Email, Money, Quantity) + 3 enums
+6. **1 DOMAIN_EVENT detecte** par convention de nommage (*Event) -- cette fois c'est un vrai domain event record, pas un Spring ApplicationEvent
+7. **La puissance de l'inference** : aucun `hexaglue.yaml` explicite n'est necessaire. Les exclusions suffisent pour nettoyer le bruit.
+8. **L'app compile mais ne demarre pas** : il n'y a plus de persistence (les JPA repos ont ete supprimes, les classes domaine n'ont plus @Entity). C'est volontaire -- l'etape 5 generera toute l'infrastructure.
+9. **Conclusion** : le domaine est pret pour la generation. HexaGlue a toutes les informations necessaires pour generer les JPA entities, mappers, et adapters.
 
 ---
 

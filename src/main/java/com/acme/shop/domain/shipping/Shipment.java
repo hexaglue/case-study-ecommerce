@@ -1,21 +1,11 @@
 package com.acme.shop.domain.shipping;
 
-import com.acme.shop.domain.order.Order;
-import com.acme.shop.domain.shared.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
-import java.math.BigDecimal;
+import com.acme.shop.domain.order.Address;
+import com.acme.shop.domain.order.Money;
+import com.acme.shop.domain.order.OrderId;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "shipments")
-public class Shipment extends BaseEntity {
+public class Shipment {
 
     public enum ShipmentStatus {
         PENDING,
@@ -25,65 +15,57 @@ public class Shipment extends BaseEntity {
         RETURNED
     }
 
-    @Column(nullable = false, unique = true)
-    private String trackingNumber;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "order_id", nullable = false)
-    private Order order;
-
-    private String carrier;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ShipmentStatus status = ShipmentStatus.PENDING;
-
-    @Column(precision = 10, scale = 2)
-    private BigDecimal shippingCost;
-
-    private String currency;
+    private ShipmentId id;
+    private final String trackingNumber;
+    private final OrderId orderId;
+    private final String carrier;
+    private ShipmentStatus status;
+    private final Money shippingCost;
+    private final Address destination;
     private LocalDateTime shippedAt;
     private LocalDateTime deliveredAt;
-    private String destinationStreet;
-    private String destinationCity;
-    private String destinationZipCode;
-    private String destinationCountry;
 
-    public Shipment() {}
+    public Shipment(ShipmentId id, String trackingNumber, OrderId orderId, String carrier,
+                    ShipmentStatus status, Money shippingCost, Address destination,
+                    LocalDateTime shippedAt, LocalDateTime deliveredAt) {
+        this.id = id;
+        this.trackingNumber = trackingNumber;
+        this.orderId = orderId;
+        this.carrier = carrier;
+        this.status = status;
+        this.shippingCost = shippingCost;
+        this.destination = destination;
+        this.shippedAt = shippedAt;
+        this.deliveredAt = deliveredAt;
+    }
 
+    public static Shipment create(String trackingNumber, OrderId orderId, String carrier,
+                                   Money shippingCost, Address destination) {
+        return new Shipment(null, trackingNumber, orderId, carrier,
+                ShipmentStatus.PENDING, shippingCost, destination, null, null);
+    }
+
+    public void ship() {
+        if (status != ShipmentStatus.PENDING) {
+            throw new IllegalStateException("Shipment must be PENDING to ship");
+        }
+        this.status = ShipmentStatus.IN_TRANSIT;
+        this.shippedAt = LocalDateTime.now();
+    }
+
+    public void markDelivered() {
+        this.status = ShipmentStatus.DELIVERED;
+        this.deliveredAt = LocalDateTime.now();
+    }
+
+    public ShipmentId getId() { return id; }
+    public void setId(ShipmentId id) { this.id = id; }
     public String getTrackingNumber() { return trackingNumber; }
-    public void setTrackingNumber(String trackingNumber) { this.trackingNumber = trackingNumber; }
-
-    public Order getOrder() { return order; }
-    public void setOrder(Order order) { this.order = order; }
-
+    public OrderId getOrderId() { return orderId; }
     public String getCarrier() { return carrier; }
-    public void setCarrier(String carrier) { this.carrier = carrier; }
-
     public ShipmentStatus getStatus() { return status; }
-    public void setStatus(ShipmentStatus status) { this.status = status; }
-
-    public BigDecimal getShippingCost() { return shippingCost; }
-    public void setShippingCost(BigDecimal shippingCost) { this.shippingCost = shippingCost; }
-
-    public String getCurrency() { return currency; }
-    public void setCurrency(String currency) { this.currency = currency; }
-
+    public Money getShippingCost() { return shippingCost; }
+    public Address getDestination() { return destination; }
     public LocalDateTime getShippedAt() { return shippedAt; }
-    public void setShippedAt(LocalDateTime shippedAt) { this.shippedAt = shippedAt; }
-
     public LocalDateTime getDeliveredAt() { return deliveredAt; }
-    public void setDeliveredAt(LocalDateTime deliveredAt) { this.deliveredAt = deliveredAt; }
-
-    public String getDestinationStreet() { return destinationStreet; }
-    public void setDestinationStreet(String destinationStreet) { this.destinationStreet = destinationStreet; }
-
-    public String getDestinationCity() { return destinationCity; }
-    public void setDestinationCity(String destinationCity) { this.destinationCity = destinationCity; }
-
-    public String getDestinationZipCode() { return destinationZipCode; }
-    public void setDestinationZipCode(String destinationZipCode) { this.destinationZipCode = destinationZipCode; }
-
-    public String getDestinationCountry() { return destinationCountry; }
-    public void setDestinationCountry(String destinationCountry) { this.destinationCountry = destinationCountry; }
 }
