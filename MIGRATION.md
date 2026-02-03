@@ -202,7 +202,80 @@ mvn hexaglue:validate   → BUILD SUCCESS
 
 ## Etape 3 : Restructuration hexagonale (`step/3-hexagonal`)
 
-*A venir*
+### Description
+
+Reorganisation complete des packages en architecture hexagonale.
+Creation des ports (driving/driven), services applicatifs, adapters infrastructure.
+Les annotations JPA restent sur les classes domaine. hexaglue.yaml : seulement des exclusions.
+
+### Modifications
+
+- **15 port interfaces creees** : 7 driving (ports/in/) + 8 driven (ports/out/)
+- **7 application services** : implementent les driving ports, dependent des driven ports
+- **6 Spring Data repos dual-interface** : JpaXxxRepository extends JpaRepository + XxxRepository port
+- **2 adapters infrastructure** : PaymentGatewayAdapter, NotificationAdapter
+- **13 classes domaine** deplacees vers domain/ (par sous-domaine)
+- **5 controllers** deplaces vers infrastructure/web/
+- **7 DTOs** deplaces vers infrastructure/web/dto/
+- **Configs, utils, event** deplaces vers infrastructure/
+- `hexaglue.yaml` mis a jour : exclusion infrastructure + application
+
+### Structure des packages
+
+```
+com.acme.shop/
+├── ShopApplication.java
+├── domain/
+│   ├── shared/            (BaseEntity)
+│   ├── order/             (Order, OrderLine, OrderStatus)
+│   ├── customer/          (Customer)
+│   ├── product/           (Product, Category)
+│   ├── inventory/         (Inventory, StockMovement)
+│   ├── payment/           (Payment, PaymentStatus)
+│   └── shipping/          (Shipment, ShippingRate)
+├── ports/
+│   ├── in/                (OrderUseCases, CustomerUseCases, ProductUseCases, CatalogUseCases, InventoryUseCases, PaymentUseCases, ShippingUseCases)
+│   └── out/               (OrderRepository, CustomerRepository, ProductRepository, InventoryRepository, PaymentRepository, ShipmentRepository, PaymentGateway, NotificationSender)
+├── application/           (7 *ApplicationService)
+├── exception/             (3 exceptions + GlobalExceptionHandler)
+└── infrastructure/
+    ├── web/               (5 controllers + dto/)
+    ├── persistence/       (6 Jpa*Repository dual-interface)
+    ├── external/          (PaymentGatewayAdapter, NotificationAdapter)
+    ├── event/             (OrderCreatedEvent)
+    ├── config/            (AppConfig, SecurityConfig)
+    └── util/              (DateUtils, MoneyUtils)
+```
+
+### Resultats
+
+```
+mvn clean compile       → BUILD SUCCESS (65 source files)
+mvn hexaglue:validate   → BUILD SUCCESS
+```
+
+| Categorie | Nombre | % | Delta vs step 2 |
+|-----------|--------|---|------------------|
+| EXPLICIT | 9 | 75,0% | = |
+| INFERRED | 3 | 25,0% | -3 |
+| UNCLASSIFIED | 0 | 0,0% | = |
+| **Total** | **12** | 100% | -3 |
+| **Ports** | **15** | - | +15 (nouveau) |
+| **Conflicts** | **0** | - | - |
+
+#### Ports detectes (15)
+
+- 7 driving ports (ports/in/) : OrderUseCases, CustomerUseCases, ProductUseCases, CatalogUseCases, InventoryUseCases, PaymentUseCases, ShippingUseCases
+- 8 driven ports (ports/out/) : OrderRepository, CustomerRepository, ProductRepository, InventoryRepository, PaymentRepository, ShipmentRepository, PaymentGateway, NotificationSender
+
+### Observations
+
+1. **Les DTOs sont maintenant exclus** (dans infrastructure) : le rapport passe de 15 a 12 types
+2. **15 ports detectes** correctement : HexaGlue identifie les interfaces dans ports/ comme DRIVING_PORT et DRIVEN_PORT
+3. **0 conflit** : HexaGlue distingue correctement driving/driven grace a la structure des packages (in/ vs out/)
+4. **La classification domaine reste plate** : tous les types domaine sont ENTITY (a cause de @Entity JPA). La distinction aggregate/entity/value object n'est pas encore possible.
+5. **L'architecture hexagonale est en place** : ports clairement definis, services dependent des ports, controllers dependent des driving ports
+6. **Conclusion** : la structure hexagonale apporte les ports, mais le domaine doit etre purifie (suppression @Entity) pour que HexaGlue infere les roles DDD (etape 4)
 
 ---
 
