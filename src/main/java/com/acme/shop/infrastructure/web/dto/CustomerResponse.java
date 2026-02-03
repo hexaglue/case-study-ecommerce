@@ -1,7 +1,9 @@
 package com.acme.shop.infrastructure.web.dto;
 
+import java.util.UUID;
+
 public record CustomerResponse(
-        Long id,
+        UUID id,
         String firstName,
         String lastName,
         String email,

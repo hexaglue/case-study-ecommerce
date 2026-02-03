@@ -2,11 +2,12 @@ package com.acme.shop.infrastructure.web.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 public record ShipmentResponse(
-        Long id,
+        UUID id,
         String trackingNumber,
-        Long orderId,
+        UUID orderId,
         String carrier,
         String status,
         BigDecimal shippingCost,

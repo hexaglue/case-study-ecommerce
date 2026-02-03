@@ -28,9 +28,15 @@ public class Inventory {
     }
 
     public static Inventory initialize(ProductId productId, int initialQuantity) {
-        Inventory inventory = new Inventory(null, productId, initialQuantity, 0, 10, null);
+        Inventory inventory = new Inventory(InventoryId.generate(), productId, initialQuantity, 0, 10, null);
         inventory.addMovement(StockMovement.MovementType.RECEIVED, initialQuantity, "Initial stock");
         return inventory;
+    }
+
+    public static Inventory reconstitute(InventoryId id, ProductId productId, int quantityOnHand,
+                                          int reservedQuantity, int reorderThreshold,
+                                          List<StockMovement> movements) {
+        return new Inventory(id, productId, quantityOnHand, reservedQuantity, reorderThreshold, movements);
     }
 
     public void reserve(int qty) {

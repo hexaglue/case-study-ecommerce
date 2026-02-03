@@ -1,17 +1,18 @@
 package com.acme.shop.domain.order;
 
 import com.acme.shop.domain.product.ProductId;
+import java.util.UUID;
 
 public class OrderLine {
 
-    private Long id;
+    private UUID id;
     private final ProductId productId;
     private final String productName;
     private final Quantity quantity;
     private final Money unitPrice;
     private final Money lineTotal;
 
-    public OrderLine(Long id, ProductId productId, String productName, Quantity quantity, Money unitPrice) {
+    public OrderLine(UUID id, ProductId productId, String productName, Quantity quantity, Money unitPrice) {
         this.id = id;
         this.productId = productId;
         this.productName = productName;
@@ -21,11 +22,16 @@ public class OrderLine {
     }
 
     public static OrderLine create(ProductId productId, String productName, Quantity quantity, Money unitPrice) {
-        return new OrderLine(null, productId, productName, quantity, unitPrice);
+        return new OrderLine(UUID.randomUUID(), productId, productName, quantity, unitPrice);
     }
 
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
+    public static OrderLine reconstitute(UUID id, ProductId productId, String productName,
+                                          Quantity quantity, Money unitPrice) {
+        return new OrderLine(id, productId, productName, quantity, unitPrice);
+    }
+
+    public UUID getId() { return id; }
+    public void setId(UUID id) { this.id = id; }
     public ProductId getProductId() { return productId; }
     public String getProductName() { return productName; }
     public Quantity getQuantity() { return quantity; }

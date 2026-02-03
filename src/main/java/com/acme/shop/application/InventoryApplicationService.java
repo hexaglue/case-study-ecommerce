@@ -5,10 +5,12 @@ import com.acme.shop.domain.product.ProductId;
 import com.acme.shop.ports.in.InventoryUseCases;
 import com.acme.shop.ports.out.InventoryRepository;
 import com.acme.shop.ports.out.ProductRepository;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Primary
 @Transactional
 public class InventoryApplicationService implements InventoryUseCases {
 

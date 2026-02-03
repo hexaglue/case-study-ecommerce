@@ -24,7 +24,12 @@ public class Product {
     }
 
     public static Product create(String name, String description, Money price, String sku, Category category) {
-        return new Product(null, name, description, price, sku, category, true);
+        return new Product(ProductId.generate(), name, description, price, sku, category, true);
+    }
+
+    public static Product reconstitute(ProductId id, String name, String description,
+                                        Money price, String sku, Category category, boolean active) {
+        return new Product(id, name, description, price, sku, category, active);
     }
 
     public void updatePrice(Money newPrice) {

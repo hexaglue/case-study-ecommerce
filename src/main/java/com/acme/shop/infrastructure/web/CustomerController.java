@@ -9,6 +9,7 @@ import com.acme.shop.infrastructure.web.dto.CustomerResponse;
 import com.acme.shop.ports.in.CustomerUseCases;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -37,7 +38,7 @@ public class CustomerController {
 
     @PutMapping("/{id}")
     public ResponseEntity<CustomerResponse> updateCustomer(
-            @PathVariable Long id, @Valid @RequestBody CreateCustomerRequest request) {
+            @PathVariable UUID id, @Valid @RequestBody CreateCustomerRequest request) {
         Address address = null;
         if (request.street() != null && !request.street().isBlank()) {
             address = new Address(request.street(), request.city(), request.zipCode(), request.country());
@@ -48,7 +49,7 @@ public class CustomerController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<CustomerResponse> getCustomer(@PathVariable Long id) {
+    public ResponseEntity<CustomerResponse> getCustomer(@PathVariable UUID id) {
         Customer customer = customerUseCases.getCustomer(new CustomerId(id));
         return ResponseEntity.ok(toResponse(customer));
     }

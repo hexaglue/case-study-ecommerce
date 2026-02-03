@@ -3,11 +3,12 @@ package com.acme.shop.infrastructure.web.dto;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 public record OrderResponse(
-        Long id,
+        UUID id,
         String orderNumber,
-        Long customerId,
+        UUID customerId,
         String customerName,
         List<LineItemResponse> lines,
         String status,
@@ -17,7 +18,7 @@ public record OrderResponse(
         LocalDateTime createdAt) {
 
     public record LineItemResponse(
-            Long productId,
+            UUID productId,
             String productName,
             int quantity,
             BigDecimal unitPrice,

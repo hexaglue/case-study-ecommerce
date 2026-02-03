@@ -455,4 +455,184 @@ mvn clean verify        → BUILD SUCCESS
 
 ## Etape 6 : Application fonctionnelle (`main`)
 
-*A venir*
+### Description
+
+Validation bout en bout de l'application avec l'infrastructure generee par HexaGlue.
+Migration des identifiants `Long` vers `UUID` (pattern DDD), ajout de methodes `reconstitute()`
+pour les mappers generes, et creation d'un `InventoryController` pour initialiser les stocks.
+
+### Problemes resolus
+
+#### 1. Strategie d'identifiants : Long → UUID
+
+HexaGlue genere des JPA entities avec la strategie **ASSIGNED** (pas de `@GeneratedValue`).
+Les identifiants `Long` ne fonctionnaient pas car aucune valeur n'etait assignee avant la persistence.
+
+**Solution** : migration vers des identifiants `UUID` avec factory method `generate()` :
+```java
+public record OrderId(UUID value) {
+    public static OrderId generate() {
+        return new OrderId(UUID.randomUUID());
+    }
+}
+```
+
+L'application assigne les IDs dans les factory methods `create()` avant la persistence.
+La strategie ASSIGNED fonctionne correctement car les UUIDs sont pre-generes.
+
+#### 2. Reconstitution des entites : convention `reconstitute()`
+
+Le mapper genere par HexaGlue appelait `Customer.create()` pour la methode `toDomain()`,
+ce qui generait un **nouvel UUID** a chaque lecture en base, perdant l'ID original.
+
+**Cause** : `MapperSpecBuilder.selectBestFactoryMethod()` a un ordre de preference explicite :
+1. Methode nommee `reconstitute` (prioritaire)
+2. Methode avec le plus de parametres (fallback)
+
+**Solution** : ajout de `reconstitute(...)` sur les 8 classes domaine (6 agregats + OrderLine + StockMovement) :
+```java
+public static Customer reconstitute(CustomerId id, String firstName, String lastName,
+        Email email, String phone, Address address) {
+    Customer c = new Customer();
+    c.id = id;
+    // ... tous les champs
+    return c;
+}
+```
+
+Le mapper genere utilise desormais `reconstitute()` et preserve tous les champs.
+
+#### 3. Serialisation des value objects dans les reponses REST
+
+Les controllers retournant directement des objets domaine causaient une serialisation imbriquee
+(`ProductId` → `{"value":"uuid"}` au lieu de `"uuid"`).
+
+**Solution** : creation de DTOs response (`ProductResponse`, `PaymentResponse`) et methodes
+`toResponse()` dans les controllers concernes.
+
+#### 4. Endpoint d'initialisation du stock
+
+`OrderApplicationService.createOrder()` appelle `inventoryUseCases.reserveStock()` mais aucun
+endpoint ne permettait d'initialiser les stocks.
+
+**Solution** : creation de `InventoryController` avec `POST /api/inventory/initialize`.
+
+### Modifications
+
+- **6 identifiants types** : `Long value` → `UUID value` + `generate()` factory
+- **8 classes domaine** : ajout `reconstitute()` static factory, `create()` utilise `XxxId.generate()`
+- **2 sous-entites** : `OrderLine` et `StockMovement` migrees de `Long id` vers `UUID id`
+- **5 DTOs** : `Long` → `UUID` pour les champs d'identifiants
+- **2 DTOs crees** : `ProductResponse`, `PaymentResponse`
+- **5 controllers adaptes** : mapping via `toResponse()` avec DTOs
+- **1 controller cree** : `InventoryController` (initialisation stock + consultation)
+- **`GlobalExceptionHandler`** : ajout handler `InsufficientStockException`
+- **`application.yml`** : nettoyage debug config
+
+### Structure finale des packages
+
+```
+com.acme.shop/
+├── ShopApplication.java
+├── domain/
+│   ├── order/        (Order, OrderLine, OrderId, OrderStatus, Money, Address, Quantity, OrderPlacedEvent)
+│   ├── customer/     (Customer, CustomerId, Email)
+│   ├── product/      (Product, ProductId, Category)
+│   ├── inventory/    (Inventory, InventoryId, StockMovement)
+│   ├── payment/      (Payment, PaymentId, PaymentStatus)
+│   └── shipping/     (Shipment, ShipmentId, ShippingRate)
+├── ports/
+│   ├── in/           (7 driving ports)
+│   └── out/          (8 driven ports)
+├── application/      (7 *ApplicationService)
+├── exception/        (4 exceptions + GlobalExceptionHandler)
+└── infrastructure/
+    ├── web/          (6 controllers + 9 DTOs)
+    └── external/     (PaymentGatewayAdapter, NotificationAdapter)
+```
+
+**Code genere par HexaGlue** (dans `target/generated-sources/hexaglue/`) :
+```
+infrastructure/persistence/
+├── entity/      (8 JPA entities + 2 embeddables)
+├── repository/  (6 Spring Data repos)
+├── mapper/      (6 MapStruct mappers)
+└── adapter/     (7 driven port adapters)
+```
+
+### Test de bout en bout
+
+| # | Endpoint | Payload | Resultat |
+|---|----------|---------|----------|
+| 1 | `POST /api/customers` | JSON body | Customer cree (UUID), tous champs preserves |
+| 2 | `POST /api/products` | Request params | Product cree (UUID), DTO correct |
+| 3 | `POST /api/inventory/initialize` | `productId=<UUID>&quantity=100` | HTTP 201 |
+| 4 | `GET /api/inventory/{id}/available` | - | `100` |
+| 5 | `POST /api/orders` | JSON body (customerId, items) | Order PLACED, 2×1299.99 = 2599.98 EUR |
+| 6 | `GET /api/inventory/{id}/available` | - | `98` (2 reservees) |
+| 7 | `POST /api/payments` | JSON body (orderId, paymentMethod) | Payment AUTHORIZED |
+| 8 | `POST /api/payments/capture` | `paymentReference=PAY-xxx` | Payment CAPTURED |
+| 9 | `POST /api/shipments` | `orderId=<UUID>&carrier=DHL` | Shipment PENDING |
+| 10 | `POST /api/shipments/{tracking}/ship` | - | Shipment IN_TRANSIT |
+| 11 | `POST /api/shipments/{tracking}/deliver` | - | Shipment DELIVERED |
+| 12 | `GET /api/orders/{id}` | - | Order **DELIVERED**, total 2599.98 EUR |
+
+### Resultats
+
+```
+mvn clean compile       → BUILD SUCCESS (100 source files : 68 manuels + 29 generes + 3 MapStruct impl)
+mvn clean verify        → BUILD SUCCESS (audit PASSED)
+mvn spring-boot:run     → Application demarre sur port 8080
+curl lifecycle complet  → PASSED (customer → product → inventory → order → payment → shipment → delivery)
+```
+
+**Audit final** :
+
+| KPI | Score | Seuil | Status |
+|-----|-------|-------|--------|
+| DDD Compliance | 100% | 90% | PASS |
+| Hexagonal Architecture | 100% | 90% | PASS |
+| Dependencies | 0% | 80% | WARN |
+| Coupling | 24% | 70% | WARN |
+| Cohesion | 66% | 80% | INFO |
+| **Score global** | **63/100** | - | **Grade D** |
+| **Violations** | **0** | - | **PASS** |
+
+### Observations
+
+1. **L'application fonctionne de bout en bout** avec l'infrastructure 100% generee par HexaGlue
+2. **La convention `reconstitute()`** est essentielle pour les mappers generes : elle evite la perte d'identite lors de la lecture en base
+3. **Les identifiants UUID** sont le pattern attendu par HexaGlue : pas besoin de `@GeneratedValue`, la strategie ASSIGNED suffit
+4. **0 fichier d'infrastructure manuelle pour la persistence** : tout est genere (entities, repos, mappers, adapters)
+5. **2 adapters manuels conserves** : `PaymentGatewayAdapter` et `NotificationAdapter` (non-persistence, non-generables)
+6. **Le score d'audit 63/100** reflète le couplage naturel d'un domaine e-commerce (Order depend de Customer, Product, Inventory, Payment, Shipping). Ce n'est pas un probleme architectural.
+
+---
+
+## Bilan de la migration
+
+### Avant (step/0-legacy) vs Apres (main)
+
+| Critere | Legacy | Hexagonal |
+|---------|--------|-----------|
+| Nombre de classes manuelles | 50 | 68 |
+| Classes d'infrastructure generees | 0 | 29 (+6 MapStruct impl) |
+| Annotations JPA dans le domaine | 9 classes | 0 |
+| Value objects | 0 | 7 (Money, Address, Email, Quantity, 3 enums) |
+| Identifiants types | 0 | 6 (OrderId, CustomerId, etc.) |
+| Domain events | 0 (1 Spring event) | 1 (OrderPlacedEvent) |
+| Ports (driving) | 0 | 7 |
+| Ports (driven) | 0 | 8 |
+| Setters dans le domaine | Partout | 0 |
+| Logique metier | Dans les services | Dans les agregats |
+| Infrastructure manuelle persistence | 6 repos Spring Data | 0 (tout genere) |
+| DDD Compliance (audit) | N/A | 100% |
+| Hexagonal Architecture (audit) | N/A | 100% |
+
+### Lecons apprises
+
+1. **HexaGlue fonctionne par inference** : aucune classification explicite n'est necessaire si le code est bien structure. Seules des exclusions dans `hexaglue.yaml` sont utiles.
+2. **Le domaine doit etre pur** : la suppression des annotations JPA (etape 4) est le point d'inflexion qui permet l'inference DDD complete.
+3. **Les conventions comptent** : `reconstitute()` pour les mappers, `UUID` pour les identifiants, records pour les value objects -- ces conventions structurelles sont le "langage" que HexaGlue comprend.
+4. **La migration est incrementale** : chaque etape compile et les observations guident la suivante.
+5. **Le cout de l'architecture hexagonale** (infrastructure manuelle) est elimine par la generation : 0 entities JPA, 0 mappers, 0 adapters a ecrire manuellement.

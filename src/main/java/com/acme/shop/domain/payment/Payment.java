@@ -36,8 +36,17 @@ public class Payment {
     }
 
     public static Payment create(String paymentReference, OrderId orderId, Money amount, String paymentMethod) {
-        return new Payment(null, paymentReference, orderId, amount, paymentMethod,
+        return new Payment(PaymentId.generate(), paymentReference, orderId, amount, paymentMethod,
                 PaymentStatus.PENDING, null, null, null, null, null);
+    }
+
+    public static Payment reconstitute(PaymentId id, String paymentReference, OrderId orderId,
+                                        Money amount, String paymentMethod, PaymentStatus status,
+                                        String transactionId, LocalDateTime authorizedAt,
+                                        LocalDateTime capturedAt, LocalDateTime failedAt,
+                                        String failureReason) {
+        return new Payment(id, paymentReference, orderId, amount, paymentMethod, status,
+                transactionId, authorizedAt, capturedAt, failedAt, failureReason);
     }
 
     public void authorize(String transactionId) {

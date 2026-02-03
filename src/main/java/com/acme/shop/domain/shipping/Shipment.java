@@ -41,8 +41,16 @@ public class Shipment {
 
     public static Shipment create(String trackingNumber, OrderId orderId, String carrier,
                                    Money shippingCost, Address destination) {
-        return new Shipment(null, trackingNumber, orderId, carrier,
+        return new Shipment(ShipmentId.generate(), trackingNumber, orderId, carrier,
                 ShipmentStatus.PENDING, shippingCost, destination, null, null);
+    }
+
+    public static Shipment reconstitute(ShipmentId id, String trackingNumber, OrderId orderId,
+                                         String carrier, ShipmentStatus status, Money shippingCost,
+                                         Address destination, LocalDateTime shippedAt,
+                                         LocalDateTime deliveredAt) {
+        return new Shipment(id, trackingNumber, orderId, carrier, status, shippingCost,
+                destination, shippedAt, deliveredAt);
     }
 
     public void ship() {

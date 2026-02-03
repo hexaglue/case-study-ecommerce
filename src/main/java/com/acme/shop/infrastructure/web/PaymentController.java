@@ -3,6 +3,7 @@ package com.acme.shop.infrastructure.web;
 import com.acme.shop.domain.order.OrderId;
 import com.acme.shop.domain.payment.Payment;
 import com.acme.shop.infrastructure.web.dto.PaymentRequest;
+import com.acme.shop.infrastructure.web.dto.PaymentResponse;
 import com.acme.shop.ports.in.PaymentUseCases;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -19,14 +20,28 @@ public class PaymentController {
     }
 
     @PostMapping
-    public ResponseEntity<Payment> processPayment(@Valid @RequestBody PaymentRequest request) {
+    public ResponseEntity<PaymentResponse> processPayment(@Valid @RequestBody PaymentRequest request) {
         Payment payment = paymentUseCases.processPayment(
                 new OrderId(request.orderId()), request.paymentMethod());
-        return ResponseEntity.ok(payment);
+        return ResponseEntity.ok(toResponse(payment));
     }
 
     @PostMapping("/capture")
-    public ResponseEntity<Payment> capturePayment(@RequestParam String paymentReference) {
-        return ResponseEntity.ok(paymentUseCases.capturePayment(paymentReference));
+    public ResponseEntity<PaymentResponse> capturePayment(@RequestParam String paymentReference) {
+        return ResponseEntity.ok(toResponse(paymentUseCases.capturePayment(paymentReference)));
+    }
+
+    private PaymentResponse toResponse(Payment payment) {
+        return new PaymentResponse(
+                payment.getId() != null ? payment.getId().value() : null,
+                payment.getPaymentReference(),
+                payment.getOrderId() != null ? payment.getOrderId().value() : null,
+                payment.getAmount().amount(),
+                payment.getAmount().currency(),
+                payment.getPaymentMethod(),
+                payment.getStatus().name(),
+                payment.getTransactionId(),
+                payment.getAuthorizedAt(),
+                payment.getCapturedAt());
     }
 }

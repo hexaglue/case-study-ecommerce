@@ -36,4 +36,13 @@ public class GlobalExceptionHandler {
                         "message", ex.getMessage(),
                         "timestamp", LocalDateTime.now().toString()));
     }
+
+    @ExceptionHandler(InsufficientStockException.class)
+    public ResponseEntity<Map<String, Object>> handleInsufficientStock(InsufficientStockException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of(
+                        "error", "Insufficient Stock",
+                        "message", ex.getMessage(),
+                        "timestamp", LocalDateTime.now().toString()));
+    }
 }

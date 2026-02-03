@@ -44,9 +44,18 @@ public class Order {
     }
 
     public static Order create(String orderNumber, CustomerId customerId, String currency) {
-        return new Order(null, orderNumber, customerId, OrderStatus.DRAFT,
+        return new Order(OrderId.generate(), orderNumber, customerId, OrderStatus.DRAFT,
                 Money.zero(currency), null, null,
                 null, null, null, null, null, null);
+    }
+
+    public static Order reconstitute(OrderId id, String orderNumber, CustomerId customerId,
+                                      OrderStatus status, Money totalAmount, Address shippingAddress,
+                                      List<OrderLine> lines, LocalDateTime placedAt, LocalDateTime paidAt,
+                                      LocalDateTime shippedAt, LocalDateTime deliveredAt,
+                                      LocalDateTime cancelledAt, String cancellationReason) {
+        return new Order(id, orderNumber, customerId, status, totalAmount, shippingAddress,
+                lines, placedAt, paidAt, shippedAt, deliveredAt, cancelledAt, cancellationReason);
     }
 
     public void addLine(OrderLine line) {

@@ -22,7 +22,12 @@ public class Customer {
     }
 
     public static Customer create(String firstName, String lastName, Email email) {
-        return new Customer(null, firstName, lastName, email, null, null);
+        return new Customer(CustomerId.generate(), firstName, lastName, email, null, null);
+    }
+
+    public static Customer reconstitute(CustomerId id, String firstName, String lastName,
+                                         Email email, String phone, Address address) {
+        return new Customer(id, firstName, lastName, email, phone, address);
     }
 
     public void updateProfile(String firstName, String lastName, String phone) {

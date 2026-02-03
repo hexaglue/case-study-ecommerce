@@ -10,6 +10,7 @@ import com.acme.shop.infrastructure.web.dto.OrderResponse;
 import com.acme.shop.ports.in.OrderUseCases;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -44,14 +45,14 @@ public class OrderController {
     }
 
     @PostMapping("/{id}/place")
-    public ResponseEntity<OrderResponse> placeOrder(@PathVariable Long id) {
+    public ResponseEntity<OrderResponse> placeOrder(@PathVariable UUID id) {
         Order order = orderUseCases.placeOrder(new OrderId(id));
         return ResponseEntity.ok(toResponse(order));
     }
 
     @PostMapping("/{id}/cancel")
     public ResponseEntity<OrderResponse> cancelOrder(
-            @PathVariable Long id, @RequestParam(required = false) String reason) {
+            @PathVariable UUID id, @RequestParam(required = false) String reason) {
         if (reason == null || reason.isBlank()) {
             reason = "Cancelled by customer";
         }
@@ -60,7 +61,7 @@ public class OrderController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<OrderResponse> getOrder(@PathVariable Long id) {
+    public ResponseEntity<OrderResponse> getOrder(@PathVariable UUID id) {
         Order order = orderUseCases.getOrder(new OrderId(id));
         return ResponseEntity.ok(toResponse(order));
     }
@@ -72,7 +73,7 @@ public class OrderController {
     }
 
     @GetMapping("/customer/{customerId}")
-    public ResponseEntity<List<OrderResponse>> getOrdersByCustomer(@PathVariable Long customerId) {
+    public ResponseEntity<List<OrderResponse>> getOrdersByCustomer(@PathVariable UUID customerId) {
         List<Order> orders = orderUseCases.getOrdersByCustomer(new CustomerId(customerId));
         return ResponseEntity.ok(orders.stream().map(this::toResponse).toList());
     }
