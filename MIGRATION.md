@@ -160,6 +160,50 @@ mvn hexaglue:audit    → BUILD SUCCESS (audit FAILED attendu : 19 violations cr
 Creation de `hexaglue.yaml` avec des exclusions minimales pour nettoyer les faux positifs
 identifies a l'etape 1. **Aucune classification explicite** -- on laisse HexaGlue inferer.
 
+### Pourquoi exclure les services ?
+
+A l'etape 1, les 8 services Spring sont classifies **VALUE_OBJECT** -- un faux positif
+qui pollue l'inventaire et genere des violations trompeuses. Voici la mecanique :
+
+1. **`@Service` n'est pas traite comme annotation d'infrastructure** par HexaGlue.
+   C'est intentionnel : `AnchorDetector` exclut `@Service` des `INFRA_ANNOTATIONS`
+   pour permettre la detection semantique des services applicatifs quand ils
+   implementent des ports.
+
+2. **Sans interfaces ports, les services ne sont pas `CoreAppClass`**.
+   `CoreAppClassDetector` requiert que la classe implemente au moins une interface
+   utilisateur (port driving potentiel) OU depende d'une interface utilisateur
+   (port driven potentiel). Les services legacy ne font ni l'un ni l'autre :
+   ils dependent directement de `JpaRepository` (extends Spring, pas user-code).
+
+3. **Sans `CoreAppClass`, les criteres flexibles ne matchent pas**.
+   Les criteres `APPLICATION_SERVICE`, `INBOUND_ONLY`, `OUTBOUND_ONLY`, `SAGA`
+   requierent tous le flag `CoreAppClass`. Aucun ne s'applique.
+
+4. **`EmbeddedValueObjectCriteria` matche par defaut** (priorite 70).
+   Les services sont des classes concretes, sans champ identite, utilisees comme
+   champs d'autres types (injection de dependances dans controllers et services).
+   Cela suffit pour matcher VALUE_OBJECT.
+
+**Consequences de cette misclassification :**
+- 8 faux VALUE_OBJECT gonflent l'inventaire (14 VOs au lieu de 6)
+- 1 fausse violation `ddd:domain-purity` sur OrderService (qui importe
+  `jakarta.persistence.EntityNotFoundException`)
+- 12 fausses violations `hexagonal:layer-isolation` (DOMAIN → PORT interdit,
+  mais les services ne sont pas du domaine)
+
+**Alternatives envisagees :**
+
+| Option | Pour | Contre |
+|--------|------|--------|
+| **Exclure** (choisi) | Elimine le bruit, rapport plus lisible | Perd la visibilite sur la couche service |
+| **Classifier APPLICATION_SERVICE** | Corrige le role, supprime les 12 violations layer-isolation (APPLICATION → PORT est autorise) | Premature : ces services legacy melangent logique metier, DTOs et infrastructure -- ce ne sont pas de vrais services applicatifs |
+| **Ne rien faire** | Rien n'est cache | 8 faux VOs, 13 violations trompeuses, rapport inexploitable |
+
+**Choix : exclure** comme compromis pragmatique. Les services seront correctement
+restructures a l'etape 3 (ports + services applicatifs implementant les driving ports),
+moment ou `CoreAppClassDetector` pourra les detecter automatiquement.
+
 ### Modifications
 
 - `hexaglue.yaml` (nouveau) : exclusion des services (`com.acme.shop.service.*`) et de l'event Spring (`com.acme.shop.event.*`)
@@ -184,13 +228,14 @@ mvn hexaglue:audit    → BUILD SUCCESS (audit FAILED attendu : 18 violations cr
 
 #### KPIs (progression)
 
-| Dimension | Step 1 | Step 2 | Delta |
-|-----------|-------:|-------:|:-----:|
-| DDD Compliance | 0% | 0% | = |
-| Hexagonal Architecture | 40% | **70%** | **+30** |
-| Dependencies | 0% | 0% | = |
-| Coupling | 30% | 21% | -9 |
-| Cohesion | 58% | 58% | = |
+| Dimension | Step 1 | Step 2 | Delta | Poids | Contribution |
+|-----------|-------:|-------:|:-----:|------:|-------------:|
+| DDD Compliance | 0% | 0% | = | 25% | 0,0 |
+| Hexagonal Architecture | 40% | **70%** | **+30** | 25% | 17,5 |
+| Dependencies | 0% | 0% | = | 20% | 0,0 |
+| Coupling | 30% | 21% | -9 | 15% | 3,2 |
+| Cohesion | 58% | 58% | = | 15% | 8,7 |
+| **TOTAL** | | | | 100% | **29,3** |
 
 #### Inventaire architectural
 
@@ -223,16 +268,58 @@ mvn hexaglue:audit    → BUILD SUCCESS (audit FAILED attendu : 18 violations cr
 | Aggregate boundary | 0,00% | 0,00% | = | Toujours pas d'agregats detectes |
 | Code complexity | 1,11 | 1,00 | -0,11 | OK |
 
+#### Classification
+
+| | Step 1 | Step 2 | Delta |
+|---|------:|------:|:-----:|
+| Types parses | 50 | 50 | = |
+| Types classifies | 30 | 21 | -9 |
+| Taux de classification | 60,0% | **52,5%** | **-7,5** |
+| Types domaine | 24 | 15 | -9 |
+| Ports | 6 | 6 | = |
+| Conflits | 0 | 0 | = |
+
+Le taux de classification baisse car les 9 services exclus ne sont plus classifies.
+10 types UNKNOWN necessitent toujours attention.
+
+#### Plan de remediation
+
+| | Manuel | Avec HexaGlue | Economies |
+|---|-------:|-------:|-------:|
+| **Effort** | 36,0 jours | 18,0 jours | **18,0 jours** |
+| **Cout** | 18 000 EUR | 9 000 EUR | **9 000 EUR** |
+
+| Action | Severite | Manuel | HexaGlue | Plugin |
+|--------|----------|-------:|-------:|:------:|
+| Corriger les 18 violations DDD (purete + identite) | CRITICAL | 18,0j | 18,0j | -- |
+| Creer les adaptateurs pour les 6 driven ports | MAJOR | ~~18,0j~~ | **0j** | `jpa` |
+| **TOTAL** | | 36,0j | **18,0j** | |
+
+> **Fait nouveau** : pour la premiere fois, le plan de remediation montre des economies
+> potentielles avec HexaGlue. Les 6 violations `hexagonal:port-coverage` (ports sans
+> adaptateur) peuvent etre resolues automatiquement par le plugin JPA, economisant
+> 18 jours (3 jours x 6 ports).
+
+Les violations `port-coverage` incluent desormais des suggestions detaillees :
+- 5 etapes (creer JPA entity, mapper, adapter, convertisseurs d'identite, enregistrer le bean)
+- Exemple de code (`JpaOrderRepository implements OrderRepository`)
+- Effort estime par port : 3 jours
+
+#### Analyse de stabilite des packages
+
+Inchangee par rapport a l'etape 1 (meme structure de packages, seule la classification change).
+
 ### Observations
 
-1. **Score +6 points** (23 → 29) : amelioration modeste. Les exclusions reduisent le bruit mais ne resolvent pas les problemes structurels.
+1. **Score +6 points** (23 → 29) : amelioration modeste. Les exclusions reduisent le bruit mais ne resolvent pas les problemes structurels. Le detail des contributions montre que le gain vient de Hexagonal (17,5 vs 10,0) tandis que Coupling baisse (3,2 vs 4,5).
 2. **Hexagonal +30 points** (40% → 70%) : c'est le gain principal. Les 12 violations `layer-isolation` disparaissent car les services (mal classifies DOMAIN) ne sont plus dans le perimetre. En contrepartie, 6 violations `port-coverage` apparaissent : les repositories n'ont pas d'adaptateur.
 3. **Swap de contraintes hexagonales** : on passe de "domaine depend des ports" (faux positif) a "ports sans adaptateur" (probleme reel). Le rapport est plus pertinent.
 4. **100% boilerplate** : sans les services, il ne reste que les entites JPA -- des data holders purs avec getters/setters. Le modele anemique est expose de maniere flagrante.
 5. **Domain purity en baisse** (58% → 40%) : paradoxe des exclusions. Avec moins de types dans le perimetre, les 9 classes impures (imports JPA) pesent proportionnellement plus. La metrique reflète correctement l'etat du code restant.
 6. **3 DTOs records persistent** comme VALUE_OBJECT : structurellement corrects (records sans identite). Pas genant a cette etape.
-7. **Classification toujours plate** : tous les types domaine restent ENTITY a cause de @Entity JPA. HexaGlue ne distingue pas agregats, entites enfants et value objects.
-8. **Conclusion** : les exclusions nettoient le bruit de classification et ameliorent la pertinence du rapport hexagonal. Mais le probleme fondamental reste : le domaine est couple a JPA. Il faut reorganiser en architecture hexagonale (etape 3) et purifier le domaine (etape 4).
+7. **Classification toujours plate** : tous les types domaine restent ENTITY a cause de @Entity JPA. HexaGlue ne distingue pas agregats, entites enfants et value objects. Taux de classification : 52,5% (21/40).
+8. **Remediation actionnable** : le plan de remediation distingue 2 actions. L'action "creer les adaptateurs" (18 jours) est automatisable par le plugin JPA -- c'est la premiere apparition d'economies potentielles (50% du total). Les violations `port-coverage` incluent desormais un exemple de code et des etapes detaillees.
+9. **Conclusion** : les exclusions nettoient le bruit de classification et ameliorent la pertinence du rapport hexagonal. Le plan de remediation montre deja un ROI potentiel de 50% avec HexaGlue. Mais le probleme fondamental reste : le domaine est couple a JPA. Il faut reorganiser en architecture hexagonale (etape 3) et purifier le domaine (etape 4).
 
 ---
 
