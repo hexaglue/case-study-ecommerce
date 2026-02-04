@@ -5,11 +5,7 @@ import com.acme.shop.domain.product.ProductId;
 import com.acme.shop.ports.in.InventoryUseCases;
 import com.acme.shop.ports.out.InventoryRepository;
 import com.acme.shop.ports.out.ProductRepository;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@Transactional
 public class InventoryApplicationService implements InventoryUseCases {
 
     private final InventoryRepository inventoryRepository;
@@ -56,7 +52,6 @@ public class InventoryApplicationService implements InventoryUseCases {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public int getAvailableQuantity(ProductId productId) {
         return findInventoryOrThrow(productId).getAvailableQuantity();
     }

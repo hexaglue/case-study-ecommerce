@@ -1,7 +1,6 @@
 package com.acme.shop.domain.inventory;
 
 import com.acme.shop.domain.product.ProductId;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

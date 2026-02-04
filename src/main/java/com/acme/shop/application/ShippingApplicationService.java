@@ -13,11 +13,7 @@ import com.acme.shop.ports.out.OrderRepository;
 import com.acme.shop.ports.out.ShipmentRepository;
 import java.math.BigDecimal;
 import java.util.UUID;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@Transactional
 public class ShippingApplicationService implements ShippingUseCases {
 
     private final ShipmentRepository shipmentRepository;

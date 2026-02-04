@@ -17,11 +17,7 @@ import com.acme.shop.ports.out.OrderRepository;
 import com.acme.shop.ports.out.ProductRepository;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@Transactional
 public class OrderApplicationService implements OrderUseCases {
 
     private final OrderRepository orderRepository;
@@ -112,13 +108,11 @@ public class OrderApplicationService implements OrderUseCases {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Order getOrder(OrderId orderId) {
         return findOrderOrThrow(orderId);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Order getOrderByNumber(String orderNumber) {
         return orderRepository
                 .findByOrderNumber(orderNumber)
@@ -126,7 +120,6 @@ public class OrderApplicationService implements OrderUseCases {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<Order> getOrdersByCustomer(CustomerId customerId) {
         return orderRepository.findByCustomerId(customerId);
     }

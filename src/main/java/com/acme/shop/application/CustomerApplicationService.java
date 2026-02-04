@@ -7,11 +7,7 @@ import com.acme.shop.domain.order.Address;
 import com.acme.shop.ports.in.CustomerUseCases;
 import com.acme.shop.ports.out.CustomerRepository;
 import java.util.List;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@Transactional
 public class CustomerApplicationService implements CustomerUseCases {
 
     private final CustomerRepository customerRepository;
@@ -52,7 +48,6 @@ public class CustomerApplicationService implements CustomerUseCases {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Customer getCustomer(CustomerId customerId) {
         return customerRepository
                 .findById(customerId)
@@ -60,7 +55,6 @@ public class CustomerApplicationService implements CustomerUseCases {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<Customer> getAllCustomers() {
         return customerRepository.findAll();
     }
