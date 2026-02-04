@@ -3,8 +3,8 @@
 Ce document retrace la migration progressive d'une application e-commerce
 Spring Boot "enterprise standard" vers une architecture hexagonale avec HexaGlue.
 
-Chaque etape correspond a une branche Git et documente les observations,
-les problemes rencontres et les resultats obtenus.
+Chaque étape correspond à une branche Git et documente les observations,
+les problèmes rencontrés et les résultats obtenus.
 
 ---
 
@@ -13,25 +13,25 @@ les problemes rencontres et les resultats obtenus.
 ### Description
 
 Application e-commerce classique Spring Boot avec les anti-patterns
-typiques d'une application enterprise :
+typiques d'une application d'enterprise :
 
-- **50 classes Java** reparties en packages techniques (controller, service, model, repository, dto, config, exception, util, event)
+- **50 classes Java** réparties en packages techniques (controller, service, model, repository, dto, config, exception, util, event)
 - **Spring Boot 3.2.5** avec Spring Data JPA et H2
 
-### Anti-patterns presents
+### Anti-patterns présents
 
 | # | Anti-pattern | Exemple |
 |---|-------------|---------|
-| 1 | `@Entity` sur classes domaine | `Order`, `Customer`, `Product` heritent de `BaseEntity` avec `@MappedSuperclass` |
-| 2 | `@Service` partout | Services applicatifs ET "domaine" marques `@Service` |
-| 3 | Pas de ports | Services dependent directement des repositories Spring Data |
-| 4 | Modele anemique | Toute la logique dans les services, entites = data holders avec setters |
+| 1 | `@Entity` sur classes domaine | `Order`, `Customer`, `Product` héritent de `BaseEntity` avec `@MappedSuperclass` |
+| 2 | `@Service` partout | Services applicatifs ET "domaine" marqués `@Service` |
+| 3 | Pas de ports | Services dépendent directement des repositories Spring Data |
+| 4 | Modèle anémique | Toute la logique dans les services, entités = data holders avec setters |
 | 5 | Primitives au lieu de value objects | `BigDecimal` pour le montant, `String` pour l'email |
-| 6 | References directes entre agregats | `Order.customer` = `Customer` (entity), pas `CustomerId` |
+| 6 | Références directes entre agrégats | `Order.customer` = `Customer` (entity), pas `CustomerId` |
 | 7 | `BaseEntity` technique | `@MappedSuperclass` avec `Long id`, `createdAt`, `updatedAt` |
 | 8 | Events Spring | `OrderCreatedEvent extends ApplicationEvent` |
-| 9 | Logique metier dans controllers | Validation de prix dans `ProductController` |
-| 10 | Infrastructure = domaine | Aucune separation, tout est un bean Spring + entity JPA |
+| 9 | Logique métier dans controllers | Validation de prix dans `ProductController` |
+| 10 | Infrastructure = domaine | Aucune séparation, tout est un bean Spring + entity JPA |
 
 ### Structure des packages
 
@@ -49,7 +49,7 @@ com.acme.shop/
 └── util/               (2 classes)  DateUtils, MoneyUtils
 ```
 
-### Verification
+### Vérification
 
 ```bash
 mvn clean compile   # BUILD SUCCESS - 50 source files
@@ -57,22 +57,21 @@ mvn clean compile   # BUILD SUCCESS - 50 source files
 
 ### Observations
 
-L'application compile et fonctionne, mais le domaine metier est
-completement enfoui sous l'infrastructure Spring/JPA. Il est impossible
+L'application compile et fonctionne, mais le domaine métier est
+complètement enfoui sous l'infrastructure Spring/JPA. Il est impossible
 de distinguer ce qui est du domaine pur de ce qui est de l'infrastructure.
 
-C'est exactement le type d'application que HexaGlue est concu pour analyser
-et aider a migrer.
+C’est exactement le type d’application pour lequel HexaGlue est conçu, afin d’en analyser la structure et d’en faciliter la migration.
 
 ---
 
-## Etape 1 : Decouverte avec HexaGlue (`step/1-discovery`)
+## Etape 1 : Découverte avec HexaGlue (`step/1-discovery`)
 
 ### Description
 
 Ajout du plugin Maven HexaGlue avec le plugin d'audit (sans extensions, sans plugins de
-generation). Premier lancement de `hexaglue:audit` sur le code legacy brut, sans aucun
-`hexaglue.yaml`, pour obtenir une baseline mesurable de l'etat architectural.
+génération). Premier lancement de `hexaglue:audit` sur le code legacy brut, sans aucun
+`hexaglue.yaml`, pour obtenir une baseline mesurable de l'état architectural.
 
 ### Modifications
 
@@ -80,7 +79,7 @@ generation). Premier lancement de `hexaglue:audit` sur le code legacy brut, sans
   `failOnError=false`, et `hexaglue-plugin-audit:2.0.0-SNAPSHOT` comme dependance plugin
 - Pas de `hexaglue.yaml` : on observe le comportement brut
 
-### Resultats
+### Résultats
 
 ```
 mvn clean compile     → BUILD SUCCESS
@@ -91,42 +90,43 @@ mvn hexaglue:audit    → BUILD SUCCESS (audit FAILED attendu : 19 violations cr
 
 | Score | Grade | Status |
 |:-----:|:-----:|:------:|
-| **23/100** | **F** | **FAILED** |
+| **15/100** | **F** | **FAILED** |
 
 #### KPIs (baseline legacy)
 
 | Dimension | Score | Poids | Contribution | Seuil | Status |
 |-----------|------:|------:|-------------:|------:|:------:|
 | DDD Compliance | 0% | 25% | 0,0 | 90% | CRITICAL |
-| Hexagonal Architecture | 40% | 25% | 10,0 | 90% | CRITICAL |
+| Hexagonal Architecture | 10% | 25% | 2,5 | 90% | CRITICAL |
 | Dependencies | 0% | 20% | 0,0 | 80% | CRITICAL |
 | Coupling | 30% | 15% | 4,5 | 70% | CRITICAL |
 | Cohesion | 58% | 15% | 8,7 | 80% | CRITICAL |
-| **TOTAL** | | 100% | **23,2** | | |
+| **TOTAL** | | 100% | **15,7** | | |
 
 #### Inventaire architectural
 
 | Composant | Nombre | Observation |
 |-----------|-------:|-------------|
-| Aggregate Roots | 0 | Aucun detecte (pas de distinction aggregate/entity) |
+| Aggregate Roots | 0 | Aucun détecté (pas de distinction agrégat/entité) |
 | Entities | 9 | Tous les @Entity JPA |
 | Value Objects | 14 | 3 enums (correct) + 8 services + 3 DTOs (faux positifs) |
-| Identifiers | 0 | Pas d'identifiants types |
+| Identifiers | 0 | Pas d'identifiants typés |
 | Domain Events | 1 | OrderCreatedEvent (Spring ApplicationEvent - faux positif) |
 | Driving Ports | 0 | Aucun port driving |
 | Driven Ports | 6 | Les 6 repositories Spring Data |
 
-#### 31 violations (19 CRITICAL, 12 MAJOR)
+#### 37 violations (19 CRITICAL, 18 MAJOR)
 
-| Contrainte | Nombre | Severite | Types concernes |
+| Contrainte | Nombre | Sévérité | Types concernés |
 |------------|-------:|----------|-----------------|
-| `ddd:entity-identity` | 9 | CRITICAL | 9 entites sans champ identite type (heritent de BaseEntity) |
-| `ddd:domain-purity` | 10 | CRITICAL | 9 modeles + OrderService avec imports JPA interdits |
-| `hexagonal:layer-isolation` | 12 | MAJOR | 7 services dependent directement des repositories |
+| `ddd:domain-purity` | 10 | CRITICAL | 9 modèles + OrderService avec imports JPA interdits |
+| `ddd:entity-identity` | 9 | CRITICAL | 9 entités sans champ identité typé (héritent de BaseEntity) |
+| `hexagonal:layer-isolation` | 12 | MAJOR | 7 services dépendent directement des repositories |
+| `hexagonal:port-direction` | 6 | MAJOR | 6 driven ports non utilisés par un service applicatif |
 
-#### Metriques cles
+#### Métriques clés
 
-| Metrique | Valeur | Seuil | Status |
+| Métrique | Valeur | Seuil | Status |
 |----------|-------:|------:|:------:|
 | Domain coverage | 80,00% | min 30% | OK |
 | Code boilerplate ratio | 81,58% | max 50% | CRITICAL |
@@ -138,28 +138,35 @@ mvn hexaglue:audit    → BUILD SUCCESS (audit FAILED attendu : 19 violations cr
 
 | | Valeur |
 |---|------:|
-| Types parses | 50 |
-| Types classifies | 30 |
+| Types parsés | 50 |
+| Types classifiés | 30 |
 | Taux de classification | 60,0% |
 | Types domaine | 24 |
 | Ports | 6 |
 | Conflits | 0 |
 
-10 types non classifies (UNKNOWN) necessitant attention, dont :
+10 types non classifiés (UNKNOWN) nécessitant attention, dont :
 `ShopApplication`, `CustomerResponse`, `OrderResponse`, `ProductSearchRequest`,
 `ShipmentResponse`, et 5 autres (DTOs, configs, utilitaires)
 
-#### Plan de remediation
+#### Plan de remédiation
 
-| | Manuel | Avec HexaGlue | Economies |
+| | Manuel | Avec HexaGlue | Économies |
 |---|-------:|-------:|-------:|
-| **Effort** | 31,0 jours | 31,0 jours | 0,0 jours |
-| **Cout** | 15 500 EUR | 15 500 EUR | 0 EUR |
+| **Effort** | 26,5 jours | 26,5 jours | 0,0 jours |
+| **Coût** | 13 250 EUR | 13 250 EUR | 0 EUR |
 
-A cette etape, HexaGlue ne peut pas encore apporter d'economies car le code
-n'est pas structure en architecture hexagonale.
+| Action | Sévérité | Effort | Violations résolues |
+|--------|----------|-------:|--------------------:|
+| Corriger les 19 violations DDD (pureté + identité) | CRITICAL | 19,0j | 19 |
+| Corriger la direction des ports | MAJOR | 1,5j | 6 |
+| Router les dépendances via les ports appropriés | MAJOR | 6,0j | 12 |
+| **TOTAL** | | **26,5j** | **37** |
 
-#### Analyse de stabilite des packages
+À cette étape, HexaGlue ne peut pas encore apporter d'économies car le code
+n'est pas structuré en architecture hexagonale.
+
+#### Analyse de stabilité des packages
 
 | Package | Ca | Ce | I | A | D | Zone |
 |---------|---:|---:|--:|--:|--:|------|
@@ -170,42 +177,43 @@ n'est pas structure en architecture hexagonale.
 | shop.controller | 0 | 15 | 1,00 | 0,00 | 0,00 | Main Sequence |
 | shop.event | 1 | 1 | 0,50 | 0,00 | 0,50 | Main Sequence |
 
-> Ca = couplage afferent, Ce = couplage efferent, I = instabilite, A = abstraction, D = distance
+> Ca = couplage afférent, Ce = couplage efférent, I = instabilité, A = abstraction, D = distance
 
-**Observations stabilite** : `shop.model` est dans la "Zone of Pain" (D=0,92) : tres
-concret et tres stable (beaucoup de dependants, peu de dependances). C'est attendu pour
-un package modele legacy. `shop.service` est dans le "Stable Core" (D=0,22) : correct pour
-des services applicatifs. `shop.repository` est bien sur la "Main Sequence" grace a son
+**Observations stabilité** : `shop.model` est dans la "Zone of Pain" (D=0,92) : très
+concret et très stable (beaucoup de dépendants, peu de dépendances). C'est attendu pour
+un package modèle legacy. `shop.service` est dans le "Stable Core" (D=0,22) : correct pour
+des services applicatifs. `shop.repository` est bien sur la "Main Sequence" grâce à son
 abstractness de 1,00 (interfaces pures).
 
-#### Rapports generes
+#### Rapports générés
 
-- `target/hexaglue/reports/audit/audit-report.json` : donnees structurees (verdict, architecture, issues, remediation, package metrics)
+- `target/hexaglue/reports/audit/audit-report.json` : données structurées (verdict, architecture, issues, remediation, package metrics)
 - `target/hexaglue/reports/audit/audit-report.html` : tableau de bord interactif
 - `target/hexaglue/reports/audit/AUDIT-REPORT.md` : rapport markdown incluant :
   - Score Radar (diagramme Mermaid)
   - Diagrammes C4 (System Context, Component, Full Architecture)
-  - Modele de domaine et couche des ports (diagrammes de classes Mermaid)
+  - Modèle de domaine et couche des ports (diagrammes de classes Mermaid)
   - Distribution des violations (pie chart)
-  - Detail de chaque violation avec localisation et suggestion de correction
-  - Plan de remediation avec estimation d'effort et cout
-  - Analyse de stabilite des packages (quadrant chart Mermaid)
-  - Metriques de packages (Ca, Ce, I, A, D, Zone)
+  - Détail de chaque violation avec localisation et suggestion de correction
+  - Plan de remédiation avec estimation d'effort et coût
+  - Analyse de stabilité des packages (quadrant chart Mermaid)
+  - Métriques de packages (Ca, Ce, I, A, D, Zone)
 
 ### Observations
 
-1. **Score 23/100 (Grade F)** : baseline quantifiee de l'etat legacy. Ce score servira de reference pour mesurer la progression a chaque etape. Le detail des contributions (DDD 0, Hex 10, Deps 0, Coupling 4,5, Cohesion 8,7 = 23,2) montre que seules les dimensions Coupling et Cohesion contribuent au score.
-2. **0% DDD Compliance** : aucune structure DDD detectee (pas d'aggregats, pas d'identifiants types, pas de value objects intentionnels).
-3. **9 entites sans identite** (`ddd:entity-identity`) : les entites heritent de `BaseEntity` qui porte un `Long id` via `@MappedSuperclass`, mais HexaGlue ne reconnait pas cela comme un champ identite type.
-4. **10 violations de purete domaine** (`ddd:domain-purity`) : toutes les classes `model/` importent des annotations JPA (`jakarta.persistence.*`). L'infrastructure est melee au domaine.
-5. **12 violations d'isolation** (`hexagonal:layer-isolation`) : les services (classifies DOMAIN) dependent directement des repositories (classifies PORT). Dans une architecture hexagonale, le domaine ne devrait pas connaitre les ports.
-6. **81,58% de boilerplate** : getters, setters, constructeurs vides -- modele anemique typique.
-7. **40% Hexagonal Architecture** : HexaGlue detecte bien les 6 repositories comme driven ports, mais l'absence de driving ports et les violations de couches plombent le score.
-8. **Classification bruyante** : 8 services Spring classes VALUE_OBJECT et 3 DTOs records sont des faux positifs a nettoyer a l'etape 2. Taux de classification : 60% (30/50 types classifies).
-9. **Remediation : 31 jours / 15 500 EUR** estimes. A cette etape, aucune economie possible avec HexaGlue (code non structure).
-10. **Stabilite des packages** : `shop.model` dans la "Zone of Pain" (D=0,92) confirme le couplage excessif du modele legacy. `shop.repository` est bien sur la "Main Sequence" (abstractness 1,00).
-11. **Rapports enrichis** : le rapport Markdown inclut des diagrammes C4 (System Context et Component), un radar des KPIs, et une analyse de stabilite des packages (quadrant chart). Ces visualisations fournissent une vue architecturale complete des la premiere analyse.
-12. **Conclusion** : l'audit fournit une baseline chiffree precise. Les 3 familles de violations identifient clairement les axes de travail : (1) creer des identifiants types, (2) purifier le domaine des imports JPA, (3) isoler les couches via des ports.
+1. **Score 15/100 (Grade F)** : baseline quantifiée de l'état legacy. Ce score servira de référence pour mesurer la progression à chaque étape. Le détail des contributions (DDD 0, Hex 2,5, Deps 0, Coupling 4,5, Cohesion 8,7 = 15,7) montre que seules les dimensions Coupling et Cohesion contribuent significativement au score.
+2. **0% DDD Compliance** : aucune structure DDD détectée (pas d'agrégats, pas d'identifiants typés, pas de value objects intentionnels).
+3. **9 entités sans identité** (`ddd:entity-identity`) : les entités héritent de `BaseEntity` qui porte un `Long id` via `@MappedSuperclass`, mais HexaGlue ne reconnaît pas cela comme un champ identité typé.
+4. **10 violations de pureté domaine** (`ddd:domain-purity`) : toutes les classes `model/` importent des annotations JPA (`jakarta.persistence.*`). L'infrastructure est mêlée au domaine.
+5. **12 violations d'isolation** (`hexagonal:layer-isolation`) : les services (classifiés DOMAIN) dépendent directement des repositories (classifiés PORT). Dans une architecture hexagonale, le domaine ne devrait pas connaître les ports.
+6. **6 violations de direction de ports** (`hexagonal:port-direction`) : les 6 driven ports ne sont utilisés par aucun service applicatif. C'est attendu puisqu'il n'y a pas encore de couche application structurée.
+7. **81,58% de boilerplate** : getters, setters, constructeurs vides -- modèle anémique typique.
+8. **10% Hexagonal Architecture** : HexaGlue détecte les 6 repositories comme driven ports, mais l'absence de driving ports, les violations de couches et les violations de direction plombent le score.
+9. **Classification bruyante** : 8 services Spring classifiés VALUE_OBJECT et 3 DTOs records sont des faux positifs à nettoyer à l'étape 2. Taux de classification : 60% (30/50 types classifiés).
+10. **Remédiation : 26,5 jours / 13 250 EUR** estimés, répartis en 3 actions : DDD (19j), direction des ports (1,5j), isolation des couches (6j). À cette étape, aucune économie possible avec HexaGlue (code non structuré).
+11. **Stabilité des packages** : `shop.model` dans la "Zone of Pain" (D=0,92) confirme le couplage excessif du modèle legacy. `shop.repository` est bien sur la "Main Sequence" (abstractness 1,00).
+12. **Rapports enrichis** : le rapport Markdown inclut des diagrammes C4 (System Context et Component), un radar des KPIs, et une analyse de stabilité des packages (quadrant chart). Ces visualisations fournissent une vue architecturale complète dès la première analyse.
+13. **Conclusion** : l'audit fournit une baseline chiffrée précise. Les 4 familles de violations identifient clairement les axes de travail : (1) créer des identifiants typés, (2) purifier le domaine des imports JPA, (3) isoler les couches via des ports, (4) connecter les driven ports aux services applicatifs.
 
 ---
 
