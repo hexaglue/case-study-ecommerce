@@ -664,30 +664,30 @@ com.acme.shop/
 
 ```
 mvn clean compile     → BUILD SUCCESS (68 source files)
-mvn hexaglue:audit    → BUILD SUCCESS (audit PASSED)
+mvn hexaglue:audit    → BUILD SUCCESS (audit PASSED with warnings : 7 violations MAJOR)
 ```
 
 #### Verdict
 
 | | Step 1 | Step 2 | Step 3 | Step 4 | Delta vs 3 |
 |---|:------:|:------:|:------:|:------:|:----------:|
-| **Score** | 15/100 | 21/100 | 40/100 | **65/100** | **+25** |
-| **Grade** | F | F | F | **D** | **↑** |
-| **Status** | FAILED | FAILED | FAILED | **PASSED** | **!!!** |
-| **Violations** | 37 | 30 | 18 | **0** | **-18** |
+| **Score** | 15/100 | 21/100 | 40/100 | **56/100** | **+16** |
+| **Grade** | F | F | F | **F** | = |
+| **Status** | FAILED | FAILED | FAILED | **PASSED_WITH_WARNINGS** | **↑** |
+| **Violations** | 37 | 30 | 18 | **7** | **-11** |
 | CRITICAL | 19 | 18 | 18 | **0** | **-18** |
-| MAJOR | 18 | 12 | 0 | **0** | = |
+| MAJOR | 18 | 12 | 0 | **7** | **+7** |
 
 #### KPIs (progression)
 
 | Dimension | Poids | Step 1 | Step 2 | Step 3 | Step 4 | Delta vs 3 | Contribution |
 |-----------|:-----:|-------:|-------:|-------:|-------:|:----------:|-------------:|
 | DDD Compliance | 25% | 0% | 0% | 0% | **100%** | **+100** | **25,0** |
-| Hexagonal Architecture | 25% | 10% | 40% | 100% | **100%** | = | **25,0** |
+| Hexagonal Architecture | 25% | 10% | 40% | 100% | **65%** | **-35** | 16,3 |
 | Dependencies | 20% | 0% | 0% | 0% | 0% | = | 0,0 |
 | Coupling | 15% | 30% | 21% | 37% | **31%** | -6 | 4,7 |
 | Cohesion | 15% | 58% | 58% | 64% | **71%** | **+7** | 10,7 |
-| **TOTAL** | **100%** | | | | **65/100** | **+25** | **65,4** |
+| **TOTAL** | **100%** | | | | **56/100** | **+16** | **56,6** |
 
 #### Inventaire architectural (transformation)
 
@@ -753,16 +753,17 @@ Le rapport inclut désormais un diagramme **Application Layer** :
 
 > **6 driven ports sans adaptateur** : ShipmentRepository, InventoryRepository, CustomerRepository, ProductRepository, OrderRepository, PaymentRepository. C'est volontaire -- HexaGlue les générera à l'étape 5.
 
-#### 0 violation
+#### 7 violations (0 CRITICAL, 7 MAJOR)
 
 | Contrainte | Step 3 | Step 4 | Delta | Observation |
 |------------|-------:|-------:|:-----:|-------------|
 | `ddd:entity-identity` | 9 | **0** | **-9** | Identifiants typés créés |
 | `ddd:domain-purity` | 9 | **0** | **-9** | Annotations JPA supprimées |
-| `hexagonal:port-coverage` | 0 | 0 | = | 6 repos sans adaptateur mais non signalés |
-| `hexagonal:port-direction` | 0 | 0 | = | Driven ports utilisés par les application services |
+| `hexagonal:application-purity` | 0 | **7** | **+7** | 7 services avec imports Spring interdits |
 
-> **Zéro violation** : les 18 violations CRITICAL de l'étape 3 (entity-identity + domain-purity) sont toutes résolues par la purification du domaine. Contrairement à l'ancienne version du plugin qui signalait 6 faux positifs `hexagonal:port-direction` à cette étape, le nouveau plugin détecte correctement que les driven ports sont utilisés par les application services (via les relations `uses` visibles dans le JSON). Les 6 driven ports sans adaptateur infrastructure (repos JPA supprimés) ne génèrent pas non plus de violation `hexagonal:port-coverage` -- ils seront générés à l'étape 5.
+> **18 violations CRITICAL résolues** : les violations `ddd:entity-identity` et `ddd:domain-purity` de l'étape 3 sont toutes résolues par la purification du domaine. En revanche, 7 nouvelles violations MAJOR apparaissent via la contrainte `hexagonal:application-purity` : chacun des 7 services applicatifs importe `org.springframework.stereotype.Service` et `org.springframework.transaction.annotation.Transactional`, détectés comme des imports d'infrastructure interdits dans la couche application. C'est le nouveau plugin qui introduit cette contrainte -- l'ancienne version tolérait ces annotations dans la couche application.
+>
+> Les 6 driven ports sans adaptateur infrastructure (repos JPA supprimés) ne génèrent pas de violation `hexagonal:port-coverage` -- ils seront générés à l'étape 5. Les driving ports sont correctement reconnus comme implémentés par les APPLICATION_SERVICE (pas de faux positif `hexagonal:port-direction`).
 
 #### Métriques clés
 
@@ -777,11 +778,16 @@ Le rapport inclut désormais un diagramme **Application Layer** :
 
 #### Plan de remédiation
 
-| | Effort | Coût |
-|---|-------:|-------:|
-| **Total** | **0 jour** | **0 EUR** |
+| | Manuel | Avec HexaGlue | Économies |
+|---|-------:|-------:|-------:|
+| **Effort** | 7,0 jours | 7,0 jours | 0,0 jours |
+| **Coût** | 3 500 EUR | 3 500 EUR | 0 EUR |
 
-> **Aucune action requise.** L'audit est entièrement passé sans violations. Le prochain effort porte sur la génération des adaptateurs infrastructure (étape 5) pour les 6 driven ports sans adaptateur.
+| Action | Sévérité | Effort | Violations résolues |
+|--------|----------|-------:|--------------------:|
+| Supprimer les imports Spring des services applicatifs | MAJOR | 7,0j | 7 |
+
+> Les 7 violations `hexagonal:application-purity` nécessitent de retirer `@Service` et `@Transactional` des services applicatifs. Cela implique un mécanisme alternatif d'enregistrement des beans Spring et de gestion transactionnelle (ex : configuration Java `@Bean`, ou AOP déclaratif). Pas d'économies HexaGlue car ces violations sont purement manuelles.
 
 #### Stabilité des packages
 
@@ -836,19 +842,20 @@ Points notables :
 
 ### Observations
 
-1. **PASSED (zéro violation)** : premier audit qui passe, et il passe **sans aucune violation**. Le score bondit de 40 à 65 (+25), le status passe de FAILED à PASSED (clean), et le grade monte de F à D. Les 18 violations CRITICAL de l'étape 3 sont **toutes résolues**.
+1. **PASSED_WITH_WARNINGS (+16 points)** : le score passe de 40 à 56, le status de FAILED à PASSED_WITH_WARNINGS. Les 18 violations CRITICAL de l'étape 3 sont **toutes résolues**, mais 7 nouvelles violations MAJOR apparaissent. Le grade reste F car le score est sous 60.
 2. **DDD Compliance 100%** : le fait marquant. HexaGlue infère correctement les 22 types domaine : 6 agrégats, 6 identifiants, 2 entités, 7 value objects, 1 domain event. **Aucune classification explicite nécessaire** -- tout est inféré par structure (CERTAIN_BY_STRUCTURE) ou convention de nommage (INFERRED pour OrderPlacedEvent).
 3. **7 APPLICATION_SERVICE classifiés** : les services applicatifs sont désormais dans le périmètre de classification. Le rapport inclut un diagramme "Application Layer" montrant les 7 services avec leurs méthodes. Cela porte le taux de classification à 95,7% (44/46).
 4. **Domain purity 100%** : plus aucun import JPA dans le domaine. Les 9 violations `ddd:domain-purity` et les 9 violations `ddd:entity-identity` sont éliminées d'un coup.
 5. **Aggregate boundary 100%** : les entités (OrderLine, StockMovement) sont accessibles uniquement via leur agrégat racine.
 6. **Boilerplate 80%** (vs 100%) : les méthodes métier (Order.place(), cancel(), markPaid(), Inventory.reserve(), etc.) ajoutent du vrai code domaine. aggregate.avgSize passe de 0 à 14,33 méthodes.
-7. **Hexagonal 100%** (maintenu) : contrairement à l'ancienne version du plugin qui affichait 70% à cette étape, le nouveau plugin maintient Hexagonal à 100%. Les 6 driven ports sans adaptateur ne sont pas signalés en violation car les application services (désormais visibles) les utilisent via des relations `uses`. Le plugin reconnaît l'architecture comme valide même sans adaptateur infrastructure concret.
-8. **Plus de faux positif `hexagonal:port-direction`** : l'ancienne version du plugin signalait 6 violations (driving ports "non implémentés par un application service"). Le nouveau plugin détecte correctement les APPLICATION_SERVICE comme implémenteurs valides des driving ports. Résultat : **0 violation** au lieu de 6.
-9. **Dépendances Spring dans la couche application** : les 7 services applicatifs importent `@Service` et `@Transactional` de Spring. L'audit ne signale pas ce problème car la contrainte `ddd:domain-purity` ne vérifie que les `DomainType` (AggregateRoot, Entity, ValueObject, etc.), pas les `ApplicationType`. C'est un choix de conception : la couche application est considérée comme une zone de transition où les annotations de framework sont tolérées.
-10. **Classification rate 95,7%** (vs 81,8%) : seuls ShopApplication et ShippingRate restent non classifiés (2/46). ShippingRate est un cas intéressant : c'est un record avec un champ Money, mais il n'est pas détecté comme VALUE_OBJECT (probablement car il n'est pas embarqué dans un agrégat).
-11. **domain.order en Zone of Pain** (D=0,92, Ca=23) : le sous-domaine order concentre Money, Address, OrderId, Quantity -- des types utilisés par tout le projet. Cette centralité rend le package fragile aux modifications.
-12. **Remédiation à zéro** : aucune action requise. L'ancienne version du plugin estimait 1,5 jours / 750 EUR (faux positifs port-direction). Le nouveau plugin confirme que l'architecture est valide telle quelle.
-13. **Conclusion** : le domaine est prêt pour la génération. Toutes les informations DDD sont inférées, la pureté est totale, et l'audit passe sans aucune violation. Le plugin JPA peut générer les 6 adaptateurs manquants automatiquement. L'étape 5 activera la génération pour combler les driven ports sans adaptateur.
+7. **Hexagonal Architecture 65%** (vs 100% à l'étape 3) : c'est la régression principale. La nouvelle contrainte `hexagonal:application-purity` pénalise le score hexagonal car les 7 services applicatifs importent des annotations Spring. À l'étape 3, les services étaient exclus du périmètre, donc cette contrainte ne s'appliquait pas. Classifier plus de types expose des problèmes de pureté architecturale.
+8. **Nouvelle contrainte `hexagonal:application-purity`** : le nouveau plugin vérifie que les types `APPLICATION_SERVICE` n'importent pas de dépendances d'infrastructure. Les 2 imports incriminés sont `org.springframework.stereotype.Service` et `org.springframework.transaction.annotation.Transactional`. C'est un changement de philosophie : l'ancienne version du plugin tolérait ces annotations dans la couche application ; la nouvelle les considère comme des violations de la pureté hexagonale.
+9. **Plus de faux positif `hexagonal:port-direction`** : le nouveau plugin détecte correctement les APPLICATION_SERVICE comme implémenteurs valides des driving ports. Les 6 faux positifs qui existaient dans l'ancienne version sont éliminés.
+10. **Plus de `hexagonal:layer-isolation`** : l'ancienne version signalait des violations quand les services dépendaient de types UNCLASSIFIED (InventoryUseCases CONFLICTING). Le nouveau plugin ne produit plus ces violations. InventoryUseCases est toujours détecté comme driven port de type REPOSITORY (en raison de ses méthodes CRUD), mais cela ne génère plus de conflit bloquant.
+11. **Classification rate 95,7%** (vs 81,8%) : seuls ShopApplication et ShippingRate restent non classifiés (2/46). ShippingRate est un cas intéressant : c'est un record avec un champ Money, mais il n'est pas détecté comme VALUE_OBJECT (probablement car il n'est pas embarqué dans un agrégat).
+12. **domain.order en Zone of Pain** (D=0,92, Ca=23) : le sous-domaine order concentre Money, Address, OrderId, Quantity -- des types utilisés par tout le projet. Cette centralité rend le package fragile aux modifications.
+13. **Remédiation : 7 jours / 3 500 EUR** : les 7 violations `application-purity` sont toutes manuelles. La correction implique de remplacer `@Service` par une déclaration `@Bean` dans une classe `@Configuration`, et `@Transactional` par un mécanisme AOP déclaratif ou une configuration XML. C'est un effort réel mais optionnel à ce stade -- l'audit passe (PASSED_WITH_WARNINGS).
+14. **Conclusion** : le domaine est prêt pour la génération. Toutes les informations DDD sont inférées, la pureté du domaine est totale. Les 7 violations `application-purity` pointent un problème de pureté de la couche application (annotations Spring) qui ne bloque pas la génération. Le plugin JPA peut générer les 6 adaptateurs manquants automatiquement. L'étape 5 activera la génération pour combler les driven ports sans adaptateur.
 
 ---
 
