@@ -31,7 +31,6 @@ public class OrderLine {
     }
 
     public UUID getId() { return id; }
-    public void setId(UUID id) { this.id = id; }
     public ProductId getProductId() { return productId; }
     public String getProductName() { return productName; }
     public Quantity getQuantity() { return quantity; }

@@ -1,5 +1,6 @@
 package com.acme.shop.application;
 
+import com.acme.shop.domain.inventory.Inventory;
 import com.acme.shop.domain.order.Address;
 import com.acme.shop.domain.order.Money;
 import com.acme.shop.domain.order.Order;
@@ -7,30 +8,26 @@ import com.acme.shop.domain.order.OrderId;
 import com.acme.shop.domain.order.OrderLine;
 import com.acme.shop.domain.order.OrderStatus;
 import com.acme.shop.domain.shipping.Shipment;
-import com.acme.shop.ports.in.InventoryUseCases;
 import com.acme.shop.ports.in.ShippingUseCases;
+import com.acme.shop.ports.out.InventoryRepository;
 import com.acme.shop.ports.out.OrderRepository;
 import com.acme.shop.ports.out.ShipmentRepository;
 import java.math.BigDecimal;
 import java.util.UUID;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@Transactional
 public class ShippingApplicationService implements ShippingUseCases {
 
     private final ShipmentRepository shipmentRepository;
     private final OrderRepository orderRepository;
-    private final InventoryUseCases inventoryUseCases;
+    private final InventoryRepository inventoryRepository;
 
     public ShippingApplicationService(
             ShipmentRepository shipmentRepository,
             OrderRepository orderRepository,
-            InventoryUseCases inventoryUseCases) {
+            InventoryRepository inventoryRepository) {
         this.shipmentRepository = shipmentRepository;
         this.orderRepository = orderRepository;
-        this.inventoryUseCases = inventoryUseCases;
+        this.inventoryRepository = inventoryRepository;
     }
 
     @Override
@@ -64,7 +61,12 @@ public class ShippingApplicationService implements ShippingUseCases {
                 .orElseThrow(() -> new IllegalStateException("Order not found for shipment"));
 
         for (OrderLine line : order.getLines()) {
-            inventoryUseCases.shipStock(line.getProductId(), line.getQuantity().value());
+            Inventory inventory = inventoryRepository
+                    .findByProductId(line.getProductId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "No inventory record for product: " + line.getProductId()));
+            inventory.ship(line.getQuantity().value());
+            inventoryRepository.save(inventory);
         }
 
         shipment.ship();

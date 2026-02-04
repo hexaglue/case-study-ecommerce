@@ -9,11 +9,7 @@ import com.acme.shop.ports.out.OrderRepository;
 import com.acme.shop.ports.out.PaymentGateway;
 import com.acme.shop.ports.out.PaymentRepository;
 import java.util.UUID;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@Transactional
 public class PaymentApplicationService implements PaymentUseCases {
 
     private final PaymentRepository paymentRepository;

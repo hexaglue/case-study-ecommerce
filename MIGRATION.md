@@ -3,8 +3,8 @@
 Ce document retrace la migration progressive d'une application e-commerce
 Spring Boot "enterprise standard" vers une architecture hexagonale avec HexaGlue.
 
-Chaque etape correspond a une branche Git et documente les observations,
-les problemes rencontres et les resultats obtenus.
+Chaque étape correspond à une branche Git et documente les observations,
+les problèmes rencontrés et les résultats obtenus.
 
 ---
 
@@ -13,25 +13,25 @@ les problemes rencontres et les resultats obtenus.
 ### Description
 
 Application e-commerce classique Spring Boot avec les anti-patterns
-typiques d'une application enterprise :
+typiques d'une application d'enterprise :
 
-- **50 classes Java** reparties en packages techniques (controller, service, model, repository, dto, config, exception, util, event)
+- **50 classes Java** réparties en packages techniques (controller, service, model, repository, dto, config, exception, util, event)
 - **Spring Boot 3.2.5** avec Spring Data JPA et H2
 
-### Anti-patterns presents
+### Anti-patterns présents
 
 | # | Anti-pattern | Exemple |
 |---|-------------|---------|
-| 1 | `@Entity` sur classes domaine | `Order`, `Customer`, `Product` heritent de `BaseEntity` avec `@MappedSuperclass` |
-| 2 | `@Service` partout | Services applicatifs ET "domaine" marques `@Service` |
-| 3 | Pas de ports | Services dependent directement des repositories Spring Data |
-| 4 | Modele anemique | Toute la logique dans les services, entites = data holders avec setters |
+| 1 | `@Entity` sur classes domaine | `Order`, `Customer`, `Product` héritent de `BaseEntity` avec `@MappedSuperclass` |
+| 2 | `@Service` partout | Services applicatifs ET "domaine" marqués `@Service` |
+| 3 | Pas de ports | Services dépendent directement des repositories Spring Data |
+| 4 | Modèle anémique | Toute la logique dans les services, entités = data holders avec setters |
 | 5 | Primitives au lieu de value objects | `BigDecimal` pour le montant, `String` pour l'email |
-| 6 | References directes entre agregats | `Order.customer` = `Customer` (entity), pas `CustomerId` |
+| 6 | Références directes entre agrégats | `Order.customer` = `Customer` (entity), pas `CustomerId` |
 | 7 | `BaseEntity` technique | `@MappedSuperclass` avec `Long id`, `createdAt`, `updatedAt` |
 | 8 | Events Spring | `OrderCreatedEvent extends ApplicationEvent` |
-| 9 | Logique metier dans controllers | Validation de prix dans `ProductController` |
-| 10 | Infrastructure = domaine | Aucune separation, tout est un bean Spring + entity JPA |
+| 9 | Logique métier dans controllers | Validation de prix dans `ProductController` |
+| 10 | Infrastructure = domaine | Aucune séparation, tout est un bean Spring + entity JPA |
 
 ### Structure des packages
 
@@ -49,7 +49,7 @@ com.acme.shop/
 └── util/               (2 classes)  DateUtils, MoneyUtils
 ```
 
-### Verification
+### Vérification
 
 ```bash
 mvn clean compile   # BUILD SUCCESS - 50 source files
@@ -57,168 +57,357 @@ mvn clean compile   # BUILD SUCCESS - 50 source files
 
 ### Observations
 
-L'application compile et fonctionne, mais le domaine metier est
-completement enfoui sous l'infrastructure Spring/JPA. Il est impossible
+L'application compile et fonctionne, mais le domaine métier est
+complètement enfoui sous l'infrastructure Spring/JPA. Il est impossible
 de distinguer ce qui est du domaine pur de ce qui est de l'infrastructure.
 
-C'est exactement le type d'application que HexaGlue est concu pour analyser
-et aider a migrer.
+C’est exactement le type d’application pour lequel HexaGlue est conçu, afin d’en analyser la structure et d’en faciliter la migration.
 
 ---
 
-## Etape 1 : Decouverte avec HexaGlue (`step/1-discovery`)
+## Etape 1 : Découverte avec HexaGlue (`step/1-discovery`)
 
 ### Description
 
-Ajout du plugin Maven HexaGlue (sans extensions, sans plugins de generation).
-Premier lancement de `hexaglue:validate` sur le code legacy brut, sans aucun `hexaglue.yaml`.
+Ajout du plugin Maven HexaGlue avec le plugin d'audit (sans extensions, sans plugins de
+génération). Premier lancement de `hexaglue:audit` sur le code legacy brut, sans aucun
+`hexaglue.yaml`, pour obtenir une baseline mesurable de l'état architectural.
 
 ### Modifications
 
-- `pom.xml` : ajout du plugin `hexaglue-maven-plugin:5.0.0-SNAPSHOT` avec `basePackage=com.acme.shop`
+- `pom.xml` : ajout du plugin `hexaglue-maven-plugin:5.0.0-SNAPSHOT` avec `basePackage=com.acme.shop`,
+  `failOnError=false`, et `hexaglue-plugin-audit:2.0.0-SNAPSHOT` comme dependance plugin
 - Pas de `hexaglue.yaml` : on observe le comportement brut
 
-### Resultats
+### Résultats
 
 ```
-mvn clean compile       → BUILD SUCCESS
-mvn hexaglue:validate   → BUILD SUCCESS
+mvn clean compile     → BUILD SUCCESS
+mvn hexaglue:audit    → BUILD SUCCESS (audit FAILED attendu : 19 violations critiques)
 ```
 
-**Classification brute** (50 types parses, 24 retenus, 26 filtres automatiquement) :
+#### Verdict
 
-| Categorie | Nombre | % |
-|-----------|--------|---|
-| EXPLICIT | 9 | 37,5% |
-| INFERRED | 15 | 62,5% |
-| UNCLASSIFIED | 0 | 0,0% |
-| **Total** | **24** | 100% |
+| Score | Grade | Status |
+|:-----:|:-----:|:------:|
+| **15/100** | **F** | **FAILED** |
 
-#### 9 types EXPLICIT (tous ENTITY via @Entity JPA)
+#### KPIs (baseline legacy)
 
-| Type | Kind |
-|------|------|
-| `Customer` | ENTITY |
-| `Inventory` | ENTITY |
-| `Order` | ENTITY |
-| `OrderLine` | ENTITY |
-| `Payment` | ENTITY |
-| `Product` | ENTITY |
-| `Shipment` | ENTITY |
-| `ShippingRate` | ENTITY |
-| `StockMovement` | ENTITY |
+| Dimension | Score | Poids | Contribution | Seuil | Status |
+|-----------|------:|------:|-------------:|------:|:------:|
+| DDD Compliance | 0% | 25% | 0,0 | 90% | CRITICAL |
+| Hexagonal Architecture | 10% | 25% | 2,5 | 90% | CRITICAL |
+| Dependencies | 0% | 20% | 0,0 | 80% | CRITICAL |
+| Coupling | 30% | 15% | 4,5 | 70% | CRITICAL |
+| Cohesion | 58% | 15% | 8,7 | 80% | CRITICAL |
+| **TOTAL** | | 100% | **15,7** | | |
 
-#### 15 types INFERRED
+#### Inventaire architectural
 
-| Type | Kind | Observation |
-|------|------|-------------|
-| `Category` | VALUE_OBJECT | Enum - correct |
-| `OrderStatus` | VALUE_OBJECT | Enum - correct |
-| `PaymentStatus` | VALUE_OBJECT | Enum - correct |
-| `CreateCustomerRequest` | VALUE_OBJECT | DTO record - faux positif |
-| `CreateOrderRequest` | VALUE_OBJECT | DTO record - faux positif |
-| `PaymentRequest` | VALUE_OBJECT | DTO record - faux positif |
-| `OrderCreatedEvent` | DOMAIN_EVENT | Spring ApplicationEvent - faux positif |
-| `CatalogService` | VALUE_OBJECT | Service Spring - faux positif |
-| `CustomerService` | VALUE_OBJECT | Service Spring - faux positif |
-| `InventoryService` | VALUE_OBJECT | Service Spring - faux positif |
-| `OrderService` | VALUE_OBJECT | Service Spring - faux positif |
-| `PaymentGatewayClient` | VALUE_OBJECT | Service Spring - faux positif |
-| `PaymentService` | VALUE_OBJECT | Service Spring - faux positif |
-| `ProductService` | VALUE_OBJECT | Service Spring - faux positif |
-| `ShippingService` | VALUE_OBJECT | Service Spring - faux positif |
+| Composant | Nombre | Observation |
+|-----------|-------:|-------------|
+| Aggregate Roots | 0 | Aucun détecté (pas de distinction agrégat/entité) |
+| Entities | 9 | Tous les @Entity JPA |
+| Value Objects | 14 | 3 enums (correct) + 8 services + 3 DTOs (faux positifs) |
+| Identifiers | 0 | Pas d'identifiants typés |
+| Domain Events | 1 | OrderCreatedEvent (Spring ApplicationEvent - faux positif) |
+| Driving Ports | 0 | Aucun port driving |
+| Driven Ports | 6 | Les 6 repositories Spring Data |
 
-#### 26 types filtres automatiquement
+#### 37 violations (19 CRITICAL, 18 MAJOR)
 
-Controllers (5), Spring Data repositories (6), configs (2), exceptions (4),
-utilitaires (2), ShopApplication, BaseEntity, NotificationService, 4 DTOs response/search.
+| Contrainte | Nombre | Sévérité | Types concernés |
+|------------|-------:|----------|-----------------|
+| `ddd:domain-purity` | 10 | CRITICAL | 9 modèles + OrderService avec imports JPA interdits |
+| `ddd:entity-identity` | 9 | CRITICAL | 9 entités sans champ identité typé (héritent de BaseEntity) |
+| `hexagonal:layer-isolation` | 12 | MAJOR | 7 services dépendent directement des repositories |
+| `hexagonal:port-direction` | 6 | MAJOR | 6 driven ports non utilisés par un service applicatif |
+
+#### Métriques clés
+
+| Métrique | Valeur | Seuil | Status |
+|----------|-------:|------:|:------:|
+| Domain coverage | 80,00% | min 30% | OK |
+| Code boilerplate ratio | 81,58% | max 50% | CRITICAL |
+| Domain purity | 58,33% | min 100% | CRITICAL |
+| Aggregate boundary | 0,00% | min 80% | CRITICAL |
+| Code complexity | 1,11 | max 10 | OK |
+
+#### Classification
+
+| | Valeur |
+|---|------:|
+| Types parsés | 50 |
+| Types classifiés | 30 |
+| Taux de classification | 60,0% |
+| Types domaine | 24 |
+| Ports | 6 |
+| Conflits | 0 |
+
+10 types non classifiés (UNKNOWN) nécessitant attention, dont :
+`ShopApplication`, `CustomerResponse`, `OrderResponse`, `ProductSearchRequest`,
+`ShipmentResponse`, et 5 autres (DTOs, configs, utilitaires)
+
+#### Plan de remédiation
+
+| | Manuel | Avec HexaGlue | Économies |
+|---|-------:|-------:|-------:|
+| **Effort** | 26,5 jours | 26,5 jours | 0,0 jours |
+| **Coût** | 13 250 EUR | 13 250 EUR | 0 EUR |
+
+| Action | Sévérité | Effort | Violations résolues |
+|--------|----------|-------:|--------------------:|
+| Corriger les 19 violations DDD (pureté + identité) | CRITICAL | 19,0j | 19 |
+| Corriger la direction des ports | MAJOR | 1,5j | 6 |
+| Router les dépendances via les ports appropriés | MAJOR | 6,0j | 12 |
+| **TOTAL** | | **26,5j** | **37** |
+
+À cette étape, HexaGlue ne peut pas encore apporter d'économies car le code
+n'est pas structuré en architecture hexagonale.
+
+#### Analyse de stabilité des packages
+
+| Package | Ca | Ce | I | A | D | Zone |
+|---------|---:|---:|--:|--:|--:|------|
+| shop.model | 18 | 0 | 0,00 | 0,08 | 0,92 | Zone of Pain |
+| shop.dto | 5 | 1 | 0,17 | 0,00 | 0,83 | Zone of Pain |
+| shop.service | 5 | 18 | 0,78 | 0,00 | 0,22 | Stable Core |
+| shop.repository | 7 | 9 | 0,56 | 1,00 | 0,56 | Main Sequence |
+| shop.controller | 0 | 15 | 1,00 | 0,00 | 0,00 | Main Sequence |
+| shop.event | 1 | 1 | 0,50 | 0,00 | 0,50 | Main Sequence |
+
+> Ca = couplage afférent, Ce = couplage efférent, I = instabilité, A = abstraction, D = distance
+
+**Observations stabilité** : `shop.model` est dans la "Zone of Pain" (D=0,92) : très
+concret et très stable (beaucoup de dépendants, peu de dépendances). C'est attendu pour
+un package modèle legacy. `shop.service` est dans le "Stable Core" (D=0,22) : correct pour
+des services applicatifs. `shop.repository` est bien sur la "Main Sequence" grâce à son
+abstractness de 1,00 (interfaces pures).
+
+#### Rapports générés
+
+- `target/hexaglue/reports/audit/audit-report.json` : données structurées (verdict, architecture, issues, remediation, package metrics)
+- `target/hexaglue/reports/audit/audit-report.html` : tableau de bord interactif
+- `target/hexaglue/reports/audit/AUDIT-REPORT.md` : rapport markdown incluant :
+  - Score Radar (diagramme Mermaid)
+  - Diagrammes C4 (System Context, Component, Full Architecture)
+  - Modèle de domaine et couche des ports (diagrammes de classes Mermaid)
+  - Distribution des violations (pie chart)
+  - Détail de chaque violation avec localisation et suggestion de correction
+  - Plan de remédiation avec estimation d'effort et coût
+  - Analyse de stabilité des packages (quadrant chart Mermaid)
+  - Métriques de packages (Ca, Ce, I, A, D, Zone)
 
 ### Observations
 
-1. **HexaGlue detecte les @Entity JPA** et les classifie ENTITY (EXPLICIT) -- attendu mais trop plat (pas de distinction aggregate/entity/value object)
-2. **Les 8 services Spring sont mal classifies VALUE_OBJECT** : HexaGlue les voit comme des types immutables injectes dans d'autres types. C'est le principal faux positif.
-3. **3 DTOs records leakent** dans le rapport comme VALUE_OBJECT : ils devraient etre exclus.
-4. **L'event Spring est detecte** comme DOMAIN_EVENT par convention de nommage (*Event) -- faux positif car c'est un ApplicationEvent Spring, pas un domain event DDD.
-5. **Les 3 enums sont correctement VALUE_OBJECT** : Category, OrderStatus, PaymentStatus.
-6. **Les controlleurs, repos, configs sont bien filtres** automatiquement.
-7. **Conclusion** : le rapport est bruyant. Il faut exclure les services et DTOs pour avoir une vue plus claire du domaine.
+1. **Score 15/100 (Grade F)** : baseline quantifiée de l'état legacy. Ce score servira de référence pour mesurer la progression à chaque étape. Le détail des contributions (DDD 0, Hex 2,5, Deps 0, Coupling 4,5, Cohesion 8,7 = 15,7) montre que seules les dimensions Coupling et Cohesion contribuent significativement au score.
+2. **0% DDD Compliance** : aucune structure DDD détectée (pas d'agrégats, pas d'identifiants typés, pas de value objects intentionnels).
+3. **9 entités sans identité** (`ddd:entity-identity`) : les entités héritent de `BaseEntity` qui porte un `Long id` via `@MappedSuperclass`, mais HexaGlue ne reconnaît pas cela comme un champ identité typé.
+4. **10 violations de pureté domaine** (`ddd:domain-purity`) : toutes les classes `model/` importent des annotations JPA (`jakarta.persistence.*`). L'infrastructure est mêlée au domaine.
+5. **12 violations d'isolation** (`hexagonal:layer-isolation`) : les services (classifiés DOMAIN) dépendent directement des repositories (classifiés PORT). Dans une architecture hexagonale, le domaine ne devrait pas connaître les ports.
+6. **6 violations de direction de ports** (`hexagonal:port-direction`) : les 6 driven ports ne sont utilisés par aucun service applicatif. C'est attendu puisqu'il n'y a pas encore de couche application structurée.
+7. **81,58% de boilerplate** : getters, setters, constructeurs vides -- modèle anémique typique.
+8. **10% Hexagonal Architecture** : HexaGlue détecte les 6 repositories comme driven ports, mais l'absence de driving ports, les violations de couches et les violations de direction plombent le score.
+9. **Classification bruyante** : 8 services Spring classifiés VALUE_OBJECT et 3 DTOs records sont des faux positifs à nettoyer à l'étape 2. Taux de classification : 60% (30/50 types classifiés).
+10. **Remédiation : 26,5 jours / 13 250 EUR** estimés, répartis en 3 actions : DDD (19j), direction des ports (1,5j), isolation des couches (6j). À cette étape, aucune économie possible avec HexaGlue (code non structuré).
+11. **Stabilité des packages** : `shop.model` dans la "Zone of Pain" (D=0,92) confirme le couplage excessif du modèle legacy. `shop.repository` est bien sur la "Main Sequence" (abstractness 1,00).
+12. **Rapports enrichis** : le rapport Markdown inclut des diagrammes C4 (System Context et Component), un radar des KPIs, et une analyse de stabilité des packages (quadrant chart). Ces visualisations fournissent une vue architecturale complète dès la première analyse.
+13. **Conclusion** : l'audit fournit une baseline chiffrée précise. Les 4 familles de violations identifient clairement les axes de travail : (1) créer des identifiants typés, (2) purifier le domaine des imports JPA, (3) isoler les couches via des ports, (4) connecter les driven ports aux services applicatifs.
 
 ---
 
-## Etape 2 : Configuration et exclusions (`step/2-configured`)
+## Étape 2 : Configuration et exclusions (`step/2-configured`)
 
 ### Description
 
-Creation de `hexaglue.yaml` avec des exclusions minimales pour nettoyer les faux positifs
-identifies a l'etape 1. **Aucune classification explicite** -- on laisse HexaGlue inferer.
+Création de `hexaglue.yaml` avec des exclusions minimales pour nettoyer les faux positifs
+identifiés à l'étape 1. **Aucune classification explicite** -- on laisse HexaGlue inférer.
+
+### Pourquoi exclure les services ?
+
+À l'étape 1, les 8 services Spring sont classifiés **VALUE_OBJECT** -- un faux positif
+qui pollue l'inventaire et génère des violations trompeuses. Voici la mécanique :
+
+1. **`@Service` n'est pas traité comme annotation d'infrastructure** par HexaGlue.
+   C'est intentionnel : `AnchorDetector` exclut `@Service` des `INFRA_ANNOTATIONS`
+   pour permettre la détection sémantique des services applicatifs quand ils
+   implémentent des ports.
+
+2. **Sans interfaces ports, les services ne sont pas `CoreAppClass`**.
+   `CoreAppClassDetector` requiert que la classe implémente au moins une interface
+   utilisateur (port driving potentiel) OU dépende d'une interface utilisateur
+   (port driven potentiel). Les services legacy ne font ni l'un ni l'autre :
+   ils dépendent directement de `JpaRepository` (extends Spring, pas user-code).
+
+3. **Sans `CoreAppClass`, les critères flexibles ne matchent pas**.
+   Les critères `APPLICATION_SERVICE`, `INBOUND_ONLY`, `OUTBOUND_ONLY`, `SAGA`
+   requièrent tous le flag `CoreAppClass`. Aucun ne s'applique.
+
+4. **`EmbeddedValueObjectCriteria` matche par défaut** (priorité 70).
+   Les services sont des classes concrètes, sans champ identité, utilisées comme
+   champs d'autres types (injection de dépendances dans controllers et services).
+   Cela suffit pour matcher VALUE_OBJECT.
+
+**Conséquences de cette misclassification :**
+- 8 faux VALUE_OBJECT gonflent l'inventaire (14 VOs au lieu de 6)
+- 1 fausse violation `ddd:domain-purity` sur OrderService (qui importe
+  `jakarta.persistence.EntityNotFoundException`)
+- 12 fausses violations `hexagonal:layer-isolation` (DOMAIN → PORT interdit,
+  mais les services ne sont pas du domaine)
+
+**Alternatives envisagées :**
+
+| Option | Pour | Contre |
+|--------|------|--------|
+| **Exclure** (choisi) | Élimine le bruit, rapport plus lisible | Perd la visibilité sur la couche service |
+| **Classifier APPLICATION_SERVICE** | Corrige le rôle, supprime les 12 violations layer-isolation (APPLICATION → PORT est autorisé) | Prématuré : ces services legacy mélangent logique métier, DTOs et infrastructure -- ce ne sont pas de vrais services applicatifs |
+| **Ne rien faire** | Rien n'est caché | 8 faux VOs, 13 violations trompeuses, rapport inexploitable |
+
+**Choix : exclure** comme compromis pragmatique. Les services seront correctement
+restructurés à l'étape 3 (ports + services applicatifs implémentant les driving ports),
+moment où `CoreAppClassDetector` pourra les détecter automatiquement.
 
 ### Modifications
 
 - `hexaglue.yaml` (nouveau) : exclusion des services (`com.acme.shop.service.*`) et de l'event Spring (`com.acme.shop.event.*`)
+- `pom.xml` : ajout du plugin d'audit et `failOnError=false` (même configuration que step 1)
 
-### Resultats
+### Résultats
 
 ```
-mvn hexaglue:validate   → BUILD SUCCESS
+mvn clean compile     → BUILD SUCCESS
+mvn hexaglue:audit    → BUILD SUCCESS (audit FAILED attendu : 18 violations critiques)
 ```
 
-**Rapport apres exclusions** (15 types, contre 24 a l'etape 1) :
+#### Verdict
 
-| Categorie | Nombre | % | Delta vs step 1 |
-|-----------|--------|---|------------------|
-| EXPLICIT | 9 | 60,0% | = |
-| INFERRED | 6 | 40,0% | -9 |
-| UNCLASSIFIED | 0 | 0,0% | = |
-| **Total** | **15** | 100% | -9 |
+| | Step 1 | Step 2 | Delta |
+|---|:------:|:------:|:-----:|
+| **Score** | 15/100 | **21/100** | **+6** |
+| **Grade** | F | **F** | = |
+| **Violations** | 37 | **30** | **-7** |
+| CRITICAL | 19 | 18 | -1 |
+| MAJOR | 18 | 12 | -6 |
 
-#### Types retenus
+#### KPIs (progression)
 
-| Type | Kind | Certainty | Observation |
-|------|------|-----------|-------------|
-| `Customer` | ENTITY | EXPLICIT | @Entity JPA |
-| `Inventory` | ENTITY | EXPLICIT | @Entity JPA |
-| `Order` | ENTITY | EXPLICIT | @Entity JPA |
-| `OrderLine` | ENTITY | EXPLICIT | @Entity JPA |
-| `Payment` | ENTITY | EXPLICIT | @Entity JPA |
-| `Product` | ENTITY | EXPLICIT | @Entity JPA |
-| `Shipment` | ENTITY | EXPLICIT | @Entity JPA |
-| `ShippingRate` | ENTITY | EXPLICIT | @Entity JPA |
-| `StockMovement` | ENTITY | EXPLICIT | @Entity JPA |
-| `Category` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Enum - correct |
-| `OrderStatus` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Enum - correct |
-| `PaymentStatus` | VALUE_OBJECT | CERTAIN_BY_STRUCTURE | Enum - correct |
-| `CreateCustomerRequest` | VALUE_OBJECT | INFERRED | DTO record - faux positif |
-| `CreateOrderRequest` | VALUE_OBJECT | INFERRED | DTO record - faux positif |
-| `PaymentRequest` | VALUE_OBJECT | INFERRED | DTO record - faux positif |
+| Dimension | Step 1 | Step 2 | Delta | Poids | Contribution |
+|-----------|-------:|-------:|:-----:|------:|-------------:|
+| DDD Compliance | 0% | 0% | = | 25% | 0,0 |
+| Hexagonal Architecture | 10% | **40%** | **+30** | 25% | 10,0 |
+| Dependencies | 0% | 0% | = | 20% | 0,0 |
+| Coupling | 30% | 21% | -9 | 15% | 3,2 |
+| Cohesion | 58% | 58% | = | 15% | 8,7 |
+| **TOTAL** | | | | 100% | **21,9** |
+
+#### Inventaire architectural
+
+| Composant | Step 1 | Step 2 | Delta |
+|-----------|-------:|-------:|:-----:|
+| Aggregate Roots | 0 | 0 | = |
+| Entities | 9 | 9 | = |
+| Value Objects | 14 | **6** | **-8** |
+| Identifiers | 0 | 0 | = |
+| Domain Events | 1 | **0** | **-1** |
+| Driving Ports | 0 | 0 | = |
+| Driven Ports | 6 | 6 | = |
+
+#### 30 violations (18 CRITICAL, 12 MAJOR)
+
+| Contrainte | Step 1 | Step 2 | Delta | Observation |
+|------------|-------:|-------:|:-----:|-------------|
+| `ddd:entity-identity` | 9 | 9 | = | Mêmes 9 entités sans identité typé |
+| `ddd:domain-purity` | 10 | **9** | **-1** | OrderService exclu |
+| `hexagonal:layer-isolation` | 12 | **0** | **-12** | Disparu : services exclus du périmètre |
+| `hexagonal:port-coverage` | 0 | **6** | **+6** | Nouveau : 6 repositories sans adaptateur |
+| `hexagonal:port-direction` | 6 | 6 | = | Inchangé : 6 driven ports sans service applicatif |
+
+#### Métriques clés
+
+| Métrique | Step 1 | Step 2 | Delta | Observation |
+|----------|-------:|-------:|:-----:|-------------|
+| Domain coverage | 80,00% | 71,43% | -8,57 | Moins de types dans le périmètre |
+| Code boilerplate ratio | 81,58% | **100,00%** | **+18,42** | Sans services, le modèle est 100% boilerplate |
+| Domain purity | 58,33% | 40,00% | -18,33 | Les 9 types impurs pèsent plus dans un périmètre réduit |
+| Aggregate boundary | 0,00% | 0,00% | = | Toujours pas d'agrégats détectés |
+| Code complexity | 1,11 | 1,00 | -0,11 | OK |
+
+#### Classification
+
+| | Step 1 | Step 2 | Delta |
+|---|------:|------:|:-----:|
+| Types parsés | 50 | 50 | = |
+| Types classifiés | 30 | 21 | -9 |
+| Taux de classification | 60,0% | **52,5%** | **-7,5** |
+| Types domaine | 24 | 15 | -9 |
+| Ports | 6 | 6 | = |
+| Conflits | 0 | 0 | = |
+
+Le taux de classification baisse car les 9 services exclus ne sont plus classifiés.
+10 types UNKNOWN nécessitent toujours attention.
+
+#### Plan de remédiation
+
+| | Manuel | Avec HexaGlue | Économies |
+|---|-------:|-------:|-------:|
+| **Effort** | 37,5 jours | 19,5 jours | **18,0 jours** |
+| **Coût** | 18 750 EUR | 9 750 EUR | **9 000 EUR** |
+
+| Action | Sévérité | Manuel | HexaGlue | Plugin |
+|--------|----------|-------:|-------:|:------:|
+| Corriger les 18 violations DDD (pureté + identité) | CRITICAL | 18,0j | 18,0j | -- |
+| Créer les adaptateurs pour les 6 driven ports | MAJOR | ~~18,0j~~ | **0j** | `jpa` |
+| Corriger la direction des ports | MAJOR | 1,5j | 1,5j | -- |
+| **TOTAL** | | 37,5j | **19,5j** | |
+
+> **Fait nouveau** : pour la première fois, le plan de remédiation montre des économies
+> potentielles avec HexaGlue. Les 6 violations `hexagonal:port-coverage` (ports sans
+> adaptateur) peuvent être résolues automatiquement par le plugin JPA, économisant
+> 18 jours (3 jours × 6 ports).
+
+Les violations `port-coverage` incluent désormais des suggestions détaillées :
+- 5 étapes (créer JPA entity, mapper, adapter, convertisseurs d'identité, enregistrer le bean)
+- Exemple de code (`JpaOrderRepository implements OrderRepository`)
+- Effort estimé par port : 3 jours
+
+#### Analyse de stabilité des packages
+
+Inchangée par rapport à l'étape 1 (même structure de packages, seule la classification change).
 
 ### Observations
 
-1. **Les 8 services et 1 event sont exclus** -- le rapport est plus propre
-2. **3 DTOs records persistent** : les records du package `dto` sont vus comme VALUE_OBJECT par HexaGlue. Ce sont des records sans identite, donc structurellement des value objects. Pas genant pour l'instant.
-3. **La classification reste plate** : tous les types domaine sont ENTITY (a cause de @Entity JPA). HexaGlue ne peut pas distinguer les agregats des entites enfants.
-4. **Conclusion** : les exclusions nettoient le bruit mais le probleme structurel reste -- il faut reorganiser en architecture hexagonale (etape 3) et purifier le domaine (etape 4) pour que l'inference DDD fonctionne.
+1. **Score +6 points** (15 → 21) : amélioration modeste. Les exclusions réduisent le bruit mais ne résolvent pas les problèmes structurels. Le détail des contributions montre que le gain vient de Hexagonal (10,0 vs 2,5) tandis que Coupling baisse (3,2 vs 4,5).
+2. **Hexagonal +30 points** (10% → 40%) : c'est le gain principal. Les 12 violations `layer-isolation` disparaissent car les services (mal classifiés DOMAIN) ne sont plus dans le périmètre. En contrepartie, 6 violations `port-coverage` apparaissent : les repositories n'ont pas d'adaptateur. Les 6 violations `port-direction` persistent (driven ports sans service applicatif).
+3. **Swap de contraintes hexagonales** : on passe de "domaine dépend des ports" (faux positif) à "ports sans adaptateur" (problème réel). Le rapport est plus pertinent.
+4. **100% boilerplate** : sans les services, il ne reste que les entités JPA -- des data holders purs avec getters/setters. Le modèle anémique est exposé de manière flagrante.
+5. **Domain purity en baisse** (58% → 40%) : paradoxe des exclusions. Avec moins de types dans le périmètre, les 9 classes impures (imports JPA) pèsent proportionnellement plus. La métrique reflète correctement l'état du code restant.
+6. **3 DTOs records persistent** comme VALUE_OBJECT : structurellement corrects (records sans identité). Pas gênant à cette étape.
+7. **Classification toujours plate** : tous les types domaine restent ENTITY à cause de @Entity JPA. HexaGlue ne distingue pas agrégats, entités enfants et value objects. Taux de classification : 52,5% (21/40).
+8. **Remédiation actionnable** : le plan de remédiation distingue 3 actions. L'action "créer les adaptateurs" (18 jours) est automatisable par le plugin JPA -- c'est la première apparition d'économies potentielles (48% du total). Les violations `port-coverage` incluent désormais un exemple de code et des étapes détaillées. L'action "corriger la direction des ports" (1,5j) est nouvelle par rapport à l'étape 1.
+9. **Conclusion** : les exclusions nettoient le bruit de classification et améliorent la pertinence du rapport hexagonal. Le plan de remédiation montre déjà un ROI potentiel de 48% avec HexaGlue. Mais le problème fondamental reste : le domaine est couplé à JPA. Il faut réorganiser en architecture hexagonale (étape 3) et purifier le domaine (étape 4).
 
 ---
 
-## Etape 3 : Restructuration hexagonale (`step/3-hexagonal`)
+## Étape 3 : Restructuration hexagonale (`step/3-hexagonal`)
 
 ### Description
 
-Reorganisation complete des packages en architecture hexagonale.
-Creation des ports (driving/driven), services applicatifs, adapters infrastructure.
+Réorganisation complète des packages en architecture hexagonale.
+Création des ports (driving/driven), services applicatifs, adapters infrastructure.
 Les annotations JPA restent sur les classes domaine. hexaglue.yaml : seulement des exclusions.
 
 ### Modifications
 
-- **15 port interfaces creees** : 7 driving (ports/in/) + 8 driven (ports/out/)
-- **7 application services** : implementent les driving ports, dependent des driven ports
+- **15 port interfaces créées** : 7 driving (ports/in/) + 8 driven (ports/out/)
+- **7 application services** : implémentent les driving ports, dépendent des driven ports
 - **6 Spring Data repos dual-interface** : JpaXxxRepository extends JpaRepository + XxxRepository port
 - **2 adapters infrastructure** : PaymentGatewayAdapter, NotificationAdapter
-- **13 classes domaine** deplacees vers domain/ (par sous-domaine)
-- **5 controllers** deplaces vers infrastructure/web/
-- **7 DTOs** deplaces vers infrastructure/web/dto/
-- **Configs, utils, event** deplaces vers infrastructure/
-- `hexaglue.yaml` mis a jour : exclusion infrastructure + application
+- **13 classes domaine** déplacées vers domain/ (par sous-domaine)
+- **5 controllers** déplacés vers infrastructure/web/
+- **7 DTOs** déplacés vers infrastructure/web/dto/
+- **Configs, utils, event** déplacés vers infrastructure/
+- `hexaglue.yaml` mis à jour : exclusion infrastructure + application
 
 ### Structure des packages
 
@@ -247,63 +436,212 @@ com.acme.shop/
     └── util/              (DateUtils, MoneyUtils)
 ```
 
-### Resultats
+### Résultats
 
 ```
-mvn clean compile       → BUILD SUCCESS (65 source files)
-mvn hexaglue:validate   → BUILD SUCCESS
+mvn clean compile     → BUILD SUCCESS (65 source files)
+mvn hexaglue:audit    → BUILD SUCCESS (audit FAILED attendu : 18 violations critiques)
 ```
 
-| Categorie | Nombre | % | Delta vs step 2 |
-|-----------|--------|---|------------------|
-| EXPLICIT | 9 | 75,0% | = |
-| INFERRED | 3 | 25,0% | -3 |
-| UNCLASSIFIED | 0 | 0,0% | = |
-| **Total** | **12** | 100% | -3 |
-| **Ports** | **15** | - | +15 (nouveau) |
-| **Conflicts** | **0** | - | - |
+#### Verdict
 
-#### Ports detectes (15)
+| | Step 1 | Step 2 | Step 3 | Delta vs 2 |
+|---|:------:|:------:|:------:|:----------:|
+| **Score** | 15/100 | 21/100 | **40/100** | **+19** |
+| **Grade** | F | F | **F** | = |
+| **Violations** | 37 | 30 | **18** | **-12** |
+| CRITICAL | 19 | 18 | 18 | = |
+| MAJOR | 18 | 12 | **0** | **-12** |
 
-- 7 driving ports (ports/in/) : OrderUseCases, CustomerUseCases, ProductUseCases, CatalogUseCases, InventoryUseCases, PaymentUseCases, ShippingUseCases
-- 8 driven ports (ports/out/) : OrderRepository, CustomerRepository, ProductRepository, InventoryRepository, PaymentRepository, ShipmentRepository, PaymentGateway, NotificationSender
+#### KPIs (progression)
+
+| Dimension | Poids | Step 1 | Step 2 | Step 3 | Delta vs 2 | Contribution |
+|-----------|:-----:|-------:|-------:|-------:|:----------:|-------------:|
+| DDD Compliance | 25% | 0% | 0% | 0% | = | 0,0 |
+| Hexagonal Architecture | 25% | 10% | 40% | **100%** | **+60** | **25,0** |
+| Dependencies | 20% | 0% | 0% | 0% | = | 0,0 |
+| Coupling | 15% | 30% | 21% | **37%** | **+16** | 5,6 |
+| Cohesion | 15% | 58% | 58% | **64%** | **+6** | 9,6 |
+| **TOTAL** | **100%** | | | **40/100** | **+19** | **40,2** |
+
+#### Inventaire architectural
+
+| Composant | Step 2 | Step 3 | Delta |
+|-----------|-------:|-------:|:-----:|
+| Aggregate Roots | 0 | 0 | = |
+| Entities | 9 | 9 | = |
+| Value Objects | 6 | **3** | **-3** |
+| Identifiers | 0 | 0 | = |
+| Domain Events | 0 | 0 | = |
+| Driving Ports | 0 | **6** | **+6** |
+| Driven Ports | 6 | **9** | **+3** |
+
+#### Classification
+
+| | Step 1 | Step 2 | Step 3 |
+|---|-------:|-------:|-------:|
+| Types parsés | 50 | 40 | **33** |
+| Types classifiés | 30 | 21 | **27** |
+| Taux | 60,0% | 52,5% | **81,8%** |
+
+Répartition : 12 types domaine (9 entities, 3 value objects) + 15 ports (6 driving, 9 driven). Les 6 types non classifiés sont hors périmètre DDD : ShopApplication, BaseEntity, 3 exceptions, GlobalExceptionHandler.
+
+#### Ports détectés (15)
+
+**6 driving ports** (ports/in/) :
+
+| Port | Méthodes |
+|------|:--------:|
+| OrderUseCases | 6 |
+| CustomerUseCases | 4 |
+| ProductUseCases | 7 |
+| CatalogUseCases | 2 |
+| PaymentUseCases | 2 |
+| ShippingUseCases | 3 |
+
+**9 driven ports** (ports/out/) -- tous avec adaptateur :
+
+| Port | Type | Méthodes | Adaptateur |
+|------|------|:--------:|:----------:|
+| OrderRepository | REPOSITORY | 5 | oui |
+| CustomerRepository | REPOSITORY | 5 | oui |
+| ProductRepository | REPOSITORY | 6 | oui |
+| InventoryRepository | REPOSITORY | 3 | oui |
+| PaymentRepository | REPOSITORY | 5 | oui |
+| ShipmentRepository | REPOSITORY | 4 | oui |
+| PaymentGateway | GATEWAY | 3 | oui |
+| NotificationSender | EVENT_PUBLISHER | 2 | oui |
+| InventoryUseCases | REPOSITORY | 5 | oui |
+
+#### Adaptateurs (15)
+
+**6 driving adapters** (application/) :
+
+| Port | Adaptateur |
+|------|------------|
+| ProductUseCases | ProductApplicationService |
+| CatalogUseCases | CatalogApplicationService |
+| OrderUseCases | OrderApplicationService |
+| CustomerUseCases | CustomerApplicationService |
+| PaymentUseCases | PaymentApplicationService |
+| ShippingUseCases | ShippingApplicationService |
+
+**9 driven adapters** (infrastructure/ + application/) :
+
+| Port | Adaptateur | Package |
+|------|------------|---------|
+| ProductRepository | JpaProductRepository | persistence |
+| CustomerRepository | JpaCustomerRepository | persistence |
+| OrderRepository | JpaOrderRepository | persistence |
+| InventoryRepository | JpaInventoryRepository | persistence |
+| PaymentRepository | JpaPaymentRepository | persistence |
+| ShipmentRepository | JpaShipmentRepository | persistence |
+| PaymentGateway | PaymentGatewayAdapter | external |
+| NotificationSender | NotificationAdapter | external |
+| InventoryUseCases | InventoryApplicationService | application |
+
+> **Note** : les application services (`com.acme.shop.application.**`) sont exclus de la **classification** par `hexaglue.yaml`, mais HexaGlue les détecte comme **adaptateurs** des driving ports car ils implémentent les interfaces de `ports/in/`. L'exclusion empêche l'attribution d'un ArchType (ex. APPLICATION_SERVICE), pas la détection de la relation structurelle port → implémenteur. C'est le comportement attendu : l'adapter detection fonctionne par analyse d'implémentation, indépendamment du pipeline de classification.
+
+#### 18 violations (18 CRITICAL, 0 MAJOR)
+
+| Contrainte | Step 2 | Step 3 | Delta | Observation |
+|------------|-------:|-------:|:-----:|-------------|
+| `ddd:entity-identity` | 9 | 9 | = | Mêmes 9 entités sans identité typé |
+| `ddd:domain-purity` | 9 | 9 | = | 9 classes model/ avec imports JPA |
+| `hexagonal:port-coverage` | 6 | **0** | **-6** | Tous les ports ont un adaptateur (dual-interface) |
+| `hexagonal:port-direction` | 6 | **0** | **-6** | Tous les driven ports sont utilisés par un adaptateur |
+
+#### Métriques clés
+
+| Métrique | Step 2 | Step 3 | Delta | Observation |
+|----------|-------:|-------:|:-----:|-------------|
+| Domain coverage | 71,43% | 44,44% | -26,99 | Périmètre élargi avec les ports |
+| Code boilerplate ratio | 100,00% | 100,00% | = | Modèle toujours anémique |
+| Domain purity | 40,00% | 25,00% | -15,00 | Ports purs diluent la proportion |
+| Aggregate boundary | 0,00% | 0,00% | = | Toujours pas d'agrégats |
+| Code complexity | 1,00 | 1,00 | = | OK |
+
+#### Plan de remédiation
+
+| | Manuel | Avec HexaGlue | Économies |
+|---|-------:|-------:|-------:|
+| **Effort** | 18,0 jours | 18,0 jours | 0,0 jours |
+| **Coût** | 9 000 EUR | 9 000 EUR | 0 EUR |
+
+1 seule action : "purifier le domaine" (supprimer les annotations JPA + ajouter les identifiants typés). Pas d'économies HexaGlue à cette étape car les violations restantes sont purement DDD (manuelles). Le gain de 48% lié aux adaptateurs (étape 2) a disparu car les violations `port-coverage` sont résolues.
+
+Effort total en baisse : 37,5 jours (étape 2) → 18 jours (étape 3). La restructuration hexagonale a divisé l'effort de remédiation par 2.
+
+#### Stabilité des packages
+
+La restructuration hexagonale transforme la topologie des packages. Les métriques de Martin révèlent un layout conforme :
+
+| Package | Ca | Ce | I | A | D | Zone |
+|---------|---:|---:|----:|----:|----:|------|
+| ports.out | 15 | 9 | 0,38 | 1,00 | 0,38 | Main Sequence |
+| ports.in | 12 | 9 | 0,43 | 1,00 | 0,43 | Main Sequence |
+| domain.shared | 9 | 0 | 0,00 | 1,00 | 0,00 | Main Sequence |
+| domain.order | 7 | 3 | 0,30 | 0,00 | 0,70 | Main Sequence |
+| domain.product | 9 | 1 | 0,10 | 0,00 | 0,90 | Zone of Pain |
+| application | 0 | 26 | 1,00 | 0,00 | 0,00 | Main Sequence |
+| infrastructure.web | 0 | 15 | 1,00 | 0,00 | 0,00 | Main Sequence |
+| infrastructure.persistence | 0 | 6 | 1,00 | 1,00 | 1,00 | Main Sequence |
+
+Points notables :
+- **ports.in et ports.out** sur la Main Sequence (A=1,00) : interfaces pures, forte dépendance entrante, conforme au rôle de contrat
+- **application** (I=1,00, A=0,00) : maximum instable, aucune dépendance entrante -- conforme au rôle d'implémentation consommable
+- **domain.product** en Zone of Pain (D=0,90) : package concret très stable, difficile à modifier car très référencé (Ca=9)
+
+#### Rapports générés
+
+- `AUDIT-REPORT.md` : rapport complet avec diagrammes Mermaid (radar, C4 System Context, C4 Component, domain model, ports, stability quadrant)
+- `audit-report.json` : données structurées (verdict, architecture, issues, remediation, appendix avec package metrics)
+- `audit-report.html` : dashboard interactif
 
 ### Observations
 
-1. **Les DTOs sont maintenant exclus** (dans infrastructure) : le rapport passe de 15 a 12 types
-2. **15 ports detectes** correctement : HexaGlue identifie les interfaces dans ports/ comme DRIVING_PORT et DRIVEN_PORT
-3. **0 conflit** : HexaGlue distingue correctement driving/driven grace a la structure des packages (in/ vs out/)
-4. **La classification domaine reste plate** : tous les types domaine sont ENTITY (a cause de @Entity JPA). La distinction aggregate/entity/value object n'est pas encore possible.
-5. **L'architecture hexagonale est en place** : ports clairement definis, services dependent des ports, controllers dependent des driving ports
-6. **Conclusion** : la structure hexagonale apporte les ports, mais le domaine doit etre purifie (suppression @Entity) pour que HexaGlue infere les roles DDD (etape 4)
+1. **Score +19 points** (21 → 40) : la restructuration hexagonale apporte un gain très significatif. Le détail des contributions montre que le gain vient principalement de Hexagonal (25,0 vs 10,0) et Coupling (5,6 vs 3,2). Les axes DDD et Dependencies restent à 0.
+2. **Hexagonal 100%** : c'est le fait marquant. Les 15 ports sont détectés, tous les driven ports ont un adaptateur (dual-interface JpaXxxRepository). Les 6 violations `port-coverage` et les 6 violations `port-direction` de l'étape 2 disparaissent.
+3. **0 violations MAJOR** : il ne reste que les 18 CRITICAL -- toutes liées au domaine (identité + pureté). L'architecture hexagonale est complètement validée.
+4. **15 adaptateurs détectés malgré les exclusions** : 6 driving (application services) + 9 driven (infrastructure). Les application services sont exclus de la classification (`application.**` dans `hexaglue.yaml`) mais détectés comme adaptateurs car ils implémentent les interfaces de `ports/in/`. HexaGlue distingue classification (attribution d'un ArchType) et détection d'adaptateurs (analyse d'implémentation). Le rapport C4 Component les représente avec les ports et les relations d'implémentation.
+5. **InventoryUseCases misclassifié** : cette interface dans `ports/in/` est détectée comme driven port de type REPOSITORY. Misclassification mineure liée à la présence de méthodes CRUD dans le contrat.
+6. **3 Value Objects** (vs 6) : les 3 DTOs records déplacés vers `infrastructure/web/dto/` sont exclus. Il reste les 3 enums (Category, OrderStatus, PaymentStatus).
+7. **Taux de classification en hausse** (52,5% → 81,8%) : la restructuration hexagonale aide la classification. Les ports sont identifiés grâce au package naming (`ports/in/`, `ports/out/`). Les 6 types non classifiés sont ShopApplication, BaseEntity, exceptions.
+8. **Remédiation en baisse** : 37,5 jours / 18 750 EUR (étape 2) → 18 jours / 9 000 EUR. La résolution des violations `port-coverage` et `port-direction` divise l'effort par 2. Plus d'économies HexaGlue car les violations restantes (DDD) sont manuelles.
+9. **Package stability conforme** : les ports (A=1,00) sont sur la Main Sequence, l'application et l'infrastructure (I=1,00) sont instables comme attendu. Le domaine concret (A=0,00) est en zone limitrophe (Distance 0,60-0,90).
+10. **Conclusion** : l'architecture hexagonale est complètement en place. Le prochain levier est la purification du domaine (étape 4) : supprimer les annotations JPA et ajouter des identifiants typés pour résoudre les 18 violations CRITICAL restantes.
 
 ---
 
-## Etape 4 : Purification du domaine (`step/4-pure-domain`)
+## Étape 4 : Purification du domaine (`step/4-pure-domain`)
 
 ### Description
 
-Domaine pur sans annotations JPA. Value objects (records). Identifiants types (records wrappant Long).
-Logique metier dans les agregats. References inter-agregats par ID uniquement.
-Pas d'infrastructure manuelle -- l'application compile mais ne peut pas demarrer (pas de persistence).
+Domaine pur sans annotations JPA. Value objects (records). Identifiants typés (records wrappant Long).
+Logique métier dans les agrégats. Références inter-agrégats par ID uniquement.
+Pas d'infrastructure manuelle -- l'application compile mais ne peut pas démarrer (pas de persistence).
+
+**Changement majeur** : les services applicatifs (`com.acme.shop.application.**`) ne sont plus exclus
+de la classification. HexaGlue les détecte désormais comme `APPLICATION_SERVICE` grâce au
+`CoreAppClassDetector` qui identifie les classes implémentant les ports driving.
 
 ### Modifications
 
-- **6 identifiants types** (records) : `OrderId`, `CustomerId`, `ProductId`, `PaymentId`, `ShipmentId`, `InventoryId` -- wrappent `Long`
+- **6 identifiants typés** (records) : `OrderId`, `CustomerId`, `ProductId`, `PaymentId`, `ShipmentId`, `InventoryId` -- wrappent `Long`
 - **4 value objects** (records) : `Money(BigDecimal, String)`, `Address(String, String, String, String)`, `Email(String)`, `Quantity(int)`
 - **1 domain event** (record) : `OrderPlacedEvent(OrderId, CustomerId, Money, Instant)`
-- **9 classes domaine purifiees** : suppression de toutes les annotations JPA, suppression de `extends BaseEntity`, remplacement des setters par des methodes metier
-- **`ShippingRate` transforme en record** (value object)
-- **`BaseEntity` supprimee** (plus necessaire)
-- **6 JPA repositories supprimes** (plus d'@Entity = plus de Spring Data direct)
-- **`OrderCreatedEvent` Spring supprime** (remplace par `OrderPlacedEvent` domaine)
-- **15 port interfaces mises a jour** avec identifiants types
-- **7 application services refactores** : utilisent les factory methods et methodes metier
-- **5 controllers adaptes** : mapping DTO <-> types domaine
-- **2 adapters infrastructure mis a jour** : `PaymentGatewayAdapter`, `NotificationAdapter`
-- **`hexaglue.yaml`** : ajout exclusion `com.acme.shop.exception.**`
+- **9 classes domaine purifiées** : suppression de toutes les annotations JPA, suppression de `extends BaseEntity`, remplacement des setters par des méthodes métier
+- **`ShippingRate` transformé en record** (value object)
+- **`BaseEntity` supprimée** (plus nécessaire)
+- **6 JPA repositories supprimés** (plus d'@Entity = plus de Spring Data direct)
+- **`OrderCreatedEvent` Spring supprimé** (remplacé par `OrderPlacedEvent` domaine)
+- **15 port interfaces mises à jour** avec identifiants typés
+- **7 application services refactorés** : utilisent les factory methods et méthodes métier
+- **5 controllers adaptés** : mapping DTO <-> types domaine
+- **2 adapters infrastructure mis à jour** : `PaymentGatewayAdapter`, `NotificationAdapter`
+- **`hexaglue.yaml`** : ajout exclusion `com.acme.shop.exception.**`, suppression de l'exclusion `com.acme.shop.application.**`
 
-### Structure des packages (domaine purifie)
+### Structure des packages (domaine purifié)
 
 ```
 com.acme.shop/
@@ -316,31 +654,166 @@ com.acme.shop/
 │   └── shipping/     (Shipment, ShipmentId, ShippingRate)
 ├── ports/
 │   ├── in/           (7 driving ports avec types domaine)
-│   └── out/          (8 driven ports avec identifiants types)
-├── application/      (7 services -- exclus de HexaGlue)
+│   └── out/          (8 driven ports avec identifiants typés)
+├── application/      (7 services -- classifiés APPLICATION_SERVICE)
 ├── exception/        (4 classes -- exclus de HexaGlue)
 └── infrastructure/   (web, external -- exclus de HexaGlue)
 ```
 
-### Resultats
+### Résultats
 
 ```
-mvn clean compile       → BUILD SUCCESS (68 source files)
-mvn hexaglue:validate   → BUILD SUCCESS
+mvn clean compile     → BUILD SUCCESS (68 source files)
+mvn hexaglue:audit    → BUILD SUCCESS (audit PASSED with warnings : 7 violations MAJOR)
 ```
 
-**Classification** (22 types domaine + 15 ports) :
+#### Verdict
 
-| Categorie | Nombre | % | Delta vs step 3 |
-|-----------|--------|---|------------------|
-| EXPLICIT | 0 | 0,0% | -9 |
-| INFERRED | 22 | 100,0% | +19 |
-| UNCLASSIFIED | 0 | 0,0% | = |
-| **Total** | **22** | 100% | +10 |
-| **Ports** | **15** | - | = |
-| **Conflicts** | **0** | - | = |
+| | Step 1 | Step 2 | Step 3 | Step 4 | Delta vs 3 |
+|---|:------:|:------:|:------:|:------:|:----------:|
+| **Score** | 15/100 | 21/100 | 40/100 | **56/100** | **+16** |
+| **Grade** | F | F | F | **F** | = |
+| **Status** | FAILED | FAILED | FAILED | **PASSED_WITH_WARNINGS** | **↑** |
+| **Violations** | 37 | 30 | 18 | **7** | **-11** |
+| CRITICAL | 19 | 18 | 18 | **0** | **-18** |
+| MAJOR | 18 | 12 | 0 | **7** | **+7** |
 
-#### Classification par role DDD (22 types, 100% INFERRED)
+#### KPIs (progression)
+
+| Dimension | Poids | Step 1 | Step 2 | Step 3 | Step 4 | Delta vs 3 | Contribution |
+|-----------|:-----:|-------:|-------:|-------:|-------:|:----------:|-------------:|
+| DDD Compliance | 25% | 0% | 0% | 0% | **100%** | **+100** | **25,0** |
+| Hexagonal Architecture | 25% | 10% | 40% | 100% | **65%** | **-35** | 16,3 |
+| Dependencies | 20% | 0% | 0% | 0% | 0% | = | 0,0 |
+| Coupling | 15% | 30% | 21% | 37% | **31%** | -6 | 4,7 |
+| Cohesion | 15% | 58% | 58% | 64% | **71%** | **+7** | 10,7 |
+| **TOTAL** | **100%** | | | | **56/100** | **+16** | **56,6** |
+
+#### Inventaire architectural (transformation)
+
+| Composant | Step 3 | Step 4 | Delta | Observation |
+|-----------|-------:|-------:|:-----:|-------------|
+| Aggregate Roots | 0 | **6** | **+6** | Customer, Order, Product, Inventory, Payment, Shipment |
+| Entities | 9 | **2** | **-7** | OrderLine, StockMovement |
+| Value Objects | 3 | **7** | **+4** | Money, Address, Email, Quantity + 3 enums |
+| Identifiers | 0 | **6** | **+6** | OrderId, CustomerId, ProductId, PaymentId, ShipmentId, InventoryId |
+| Domain Events | 0 | **1** | **+1** | OrderPlacedEvent |
+| Driving Ports | 6 | 6 | = | Inchangés |
+| Driven Ports | 9 | 9 | = | 6 sans adaptateur (JPA repos supprimés) |
+| Application Services | 0 | **7** | **+7** | Classifiés APPLICATION_SERVICE |
+
+#### Classification
+
+| | Step 1 | Step 2 | Step 3 | Step 4 |
+|---|-------:|-------:|-------:|-------:|
+| Types en périmètre | 50 | 40 | 33 | **46** |
+| Types classifiés | 30 | 21 | 27 | **44** |
+| Taux | 60,0% | 52,5% | 81,8% | **95,7%** |
+
+Répartition : 22 types domaine (6 AR, 2 entities, 7 VOs, 6 identifiers, 1 event) + 15 ports (6 driving, 9 driven) + **7 application services**. Seuls 2 types non classifiés : ShopApplication et ShippingRate (UNKNOWN).
+
+> **Changement vs étapes précédentes** : les 7 application services sont désormais dans le périmètre de classification. Ils étaient auparavant exclus par `com.acme.shop.application.**` dans `hexaglue.yaml`. Le nombre de types en périmètre passe de 39 à 46 (+7), le taux de classification monte à 95,7% (44/46).
+
+#### Couche applicative (7 APPLICATION_SERVICE)
+
+Le rapport inclut désormais un diagramme **Application Layer** :
+
+| Application Service | Méthodes | Port implémenté |
+|---------------------|:--------:|-----------------|
+| CustomerApplicationService | 4 | CustomerUseCases |
+| CatalogApplicationService | 2 | CatalogUseCases |
+| OrderApplicationService | 7 | OrderUseCases |
+| ProductApplicationService | 8 | ProductUseCases |
+| PaymentApplicationService | 2 | PaymentUseCases |
+| ShippingApplicationService | 3 | ShippingUseCases |
+| InventoryApplicationService | 6 | InventoryUseCases |
+
+#### Adaptateurs (9)
+
+> Les 6 JPA repos dual-interface ont été supprimés (le domaine pur n'a plus @Entity). Il ne reste que 9 adaptateurs.
+
+**6 driving adapters** (application/) :
+
+| Port | Adaptateur |
+|------|------------|
+| CustomerUseCases | CustomerApplicationService |
+| ShippingUseCases | ShippingApplicationService |
+| OrderUseCases | OrderApplicationService |
+| ProductUseCases | ProductApplicationService |
+| PaymentUseCases | PaymentApplicationService |
+| CatalogUseCases | CatalogApplicationService |
+
+**3 driven adapters** (infrastructure/ + application/) :
+
+| Port | Adaptateur | Package |
+|------|------------|---------|
+| NotificationSender | NotificationAdapter | external |
+| PaymentGateway | PaymentGatewayAdapter | external |
+| InventoryUseCases | InventoryApplicationService | application |
+
+> **6 driven ports sans adaptateur** : ShipmentRepository, InventoryRepository, CustomerRepository, ProductRepository, OrderRepository, PaymentRepository. C'est volontaire -- HexaGlue les générera à l'étape 5.
+
+#### 7 violations (0 CRITICAL, 7 MAJOR)
+
+| Contrainte | Step 3 | Step 4 | Delta | Observation |
+|------------|-------:|-------:|:-----:|-------------|
+| `ddd:entity-identity` | 9 | **0** | **-9** | Identifiants typés créés |
+| `ddd:domain-purity` | 9 | **0** | **-9** | Annotations JPA supprimées |
+| `hexagonal:application-purity` | 0 | **7** | **+7** | 7 services avec imports Spring interdits |
+
+> **18 violations CRITICAL résolues** : les violations `ddd:entity-identity` et `ddd:domain-purity` de l'étape 3 sont toutes résolues par la purification du domaine. En revanche, 7 nouvelles violations MAJOR apparaissent via la contrainte `hexagonal:application-purity` : chacun des 7 services applicatifs importe `org.springframework.stereotype.Service` et `org.springframework.transaction.annotation.Transactional`, détectés comme des imports d'infrastructure interdits dans la couche application. C'est le nouveau plugin qui introduit cette contrainte -- l'ancienne version tolérait ces annotations dans la couche application.
+>
+> Les 6 driven ports sans adaptateur infrastructure (repos JPA supprimés) ne génèrent pas de violation `hexagonal:port-coverage` -- ils seront générés à l'étape 5. Les driving ports sont correctement reconnus comme implémentés par les APPLICATION_SERVICE (pas de faux positif `hexagonal:port-direction`).
+
+#### Métriques clés
+
+| Métrique | Step 3 | Step 4 | Delta | Observation |
+|----------|-------:|-------:|:-----:|-------------|
+| Domain purity | 25,00% | **100,00%** | **+75** | Zéro import d'infrastructure dans le domaine |
+| Aggregate boundary | 0,00% | **100,00%** | **+100** | Entités accessibles uniquement via l'agrégat |
+| Code boilerplate ratio | 100,00% | **80,20%** | **-19,80** | Logique métier ajoutée (place, cancel, etc.) |
+| Aggregate avg size | 0 | **14,33** | **+14,33** | Les agrégats ont de vraies méthodes métier |
+| Domain coverage | 44,44% | **50,00%** | **+5,56** | Plus de types domaine dans le périmètre |
+| Classification rate | 81,8% | **95,7%** | **+13,9** | 44/46 types classifiés |
+
+#### Plan de remédiation
+
+| | Manuel | Avec HexaGlue | Économies |
+|---|-------:|-------:|-------:|
+| **Effort** | 7,0 jours | 7,0 jours | 0,0 jours |
+| **Coût** | 3 500 EUR | 3 500 EUR | 0 EUR |
+
+| Action | Sévérité | Effort | Violations résolues |
+|--------|----------|-------:|--------------------:|
+| Supprimer les imports Spring des services applicatifs | MAJOR | 7,0j | 7 |
+
+> Les 7 violations `hexagonal:application-purity` nécessitent de retirer `@Service` et `@Transactional` des services applicatifs. Cela implique un mécanisme alternatif d'enregistrement des beans Spring et de gestion transactionnelle (ex : configuration Java `@Bean`, ou AOP déclaratif). Pas d'économies HexaGlue car ces violations sont purement manuelles.
+
+#### Stabilité des packages
+
+| Package | Ca | Ce | I | A | D | Zone |
+|---------|---:|---:|----:|----:|----:|------|
+| ports.out | 9 | 17 | 0,65 | 1,00 | 0,65 | Main Sequence |
+| ports.in | 12 | 13 | 0,52 | 1,00 | 0,52 | Main Sequence |
+| domain.order | 23 | 2 | 0,08 | 0,00 | 0,92 | Zone of Pain |
+| domain.product | 12 | 1 | 0,08 | 0,00 | 0,92 | Zone of Pain |
+| domain.customer | 11 | 1 | 0,08 | 0,00 | 0,92 | Zone of Pain |
+| domain.shipping | 4 | 3 | 0,43 | 0,00 | 0,57 | Main Sequence |
+| domain.payment | 4 | 2 | 0,33 | 0,00 | 0,67 | Main Sequence |
+| application | 0 | 28 | 1,00 | 0,00 | 0,00 | Main Sequence |
+
+Points notables :
+- **domain.order en Zone of Pain** (D=0,92, Ca=23) : package domaine le plus référencé du projet (Money, Address, OrderId, Quantity utilisés partout). Difficile à modifier sans impact. Signe d'un sous-domaine central qui mériterait potentiellement un découpage.
+- **ports.out** (I=0,65 vs 0,38 à l'étape 3) : instabilité en hausse car les ports réfèrent maintenant les types domaine enrichis (identifiants typés, value objects).
+- **application** (Ce=28 vs 26) : légère hausse des dépendances sortantes, les services utilisent les nouveaux types domaine.
+
+#### Rapports générés
+
+- `AUDIT-REPORT.md` : rapport avec diagrammes Mermaid (radar, C4, **application layer**, domain model avec identifiants et value objects, ports avec couverture, stability quadrant)
+- `audit-report.json` : données structurées (verdict, architecture avec agrégats enrichis, issues, remédiation)
+- `audit-report.html` : dashboard interactif
+
+#### Classification par rôle DDD (22 types domaine, 100% INFERRED)
 
 | Type | Kind | Certainty | Reasoning |
 |------|------|-----------|-----------|
@@ -369,35 +842,50 @@ mvn hexaglue:validate   → BUILD SUCCESS
 
 ### Observations
 
-1. **0% EXPLICIT, 100% INFERRED** : le domaine pur permet a HexaGlue d'inferer correctement tous les roles DDD sans aucune classification explicite
-2. **6 AGGREGATE_ROOT detectes** via la correlation types-repositories : chaque type dominant d'un repository est un aggregate root
-3. **6 IDENTIFIER detectes** via la structure des records wrappant Long
-4. **2 ENTITY detectees** (OrderLine, StockMovement) : classes avec identite contenues dans un agregat
-5. **7 VALUE_OBJECT detectes** : 4 records immutables (Address, Email, Money, Quantity) + 3 enums
-6. **1 DOMAIN_EVENT detecte** par convention de nommage (*Event) -- cette fois c'est un vrai domain event record, pas un Spring ApplicationEvent
-7. **La puissance de l'inference** : aucun `hexaglue.yaml` explicite n'est necessaire. Les exclusions suffisent pour nettoyer le bruit.
-8. **L'app compile mais ne demarre pas** : il n'y a plus de persistence (les JPA repos ont ete supprimes, les classes domaine n'ont plus @Entity). C'est volontaire -- l'etape 5 generera toute l'infrastructure.
-9. **Conclusion** : le domaine est pret pour la generation. HexaGlue a toutes les informations necessaires pour generer les JPA entities, mappers, et adapters.
+1. **PASSED_WITH_WARNINGS (+16 points)** : le score passe de 40 à 56, le status de FAILED à PASSED_WITH_WARNINGS. Les 18 violations CRITICAL de l'étape 3 sont **toutes résolues**, mais 7 nouvelles violations MAJOR apparaissent. Le grade reste F car le score est sous 60.
+2. **DDD Compliance 100%** : le fait marquant. HexaGlue infère correctement les 22 types domaine : 6 agrégats, 6 identifiants, 2 entités, 7 value objects, 1 domain event. **Aucune classification explicite nécessaire** -- tout est inféré par structure (CERTAIN_BY_STRUCTURE) ou convention de nommage (INFERRED pour OrderPlacedEvent).
+3. **7 APPLICATION_SERVICE classifiés** : les services applicatifs sont désormais dans le périmètre de classification. Le rapport inclut un diagramme "Application Layer" montrant les 7 services avec leurs méthodes. Cela porte le taux de classification à 95,7% (44/46).
+4. **Domain purity 100%** : plus aucun import JPA dans le domaine. Les 9 violations `ddd:domain-purity` et les 9 violations `ddd:entity-identity` sont éliminées d'un coup.
+5. **Aggregate boundary 100%** : les entités (OrderLine, StockMovement) sont accessibles uniquement via leur agrégat racine.
+6. **Boilerplate 80%** (vs 100%) : les méthodes métier (Order.place(), cancel(), markPaid(), Inventory.reserve(), etc.) ajoutent du vrai code domaine. aggregate.avgSize passe de 0 à 14,33 méthodes.
+7. **Hexagonal Architecture 65%** (vs 100% à l'étape 3) : c'est la régression principale. La nouvelle contrainte `hexagonal:application-purity` pénalise le score hexagonal car les 7 services applicatifs importent des annotations Spring. À l'étape 3, les services étaient exclus du périmètre, donc cette contrainte ne s'appliquait pas. Classifier plus de types expose des problèmes de pureté architecturale.
+8. **Nouvelle contrainte `hexagonal:application-purity`** : le nouveau plugin vérifie que les types `APPLICATION_SERVICE` n'importent pas de dépendances d'infrastructure. Les 2 imports incriminés sont `org.springframework.stereotype.Service` et `org.springframework.transaction.annotation.Transactional`. C'est un changement de philosophie : l'ancienne version du plugin tolérait ces annotations dans la couche application ; la nouvelle les considère comme des violations de la pureté hexagonale.
+9. **Plus de faux positif `hexagonal:port-direction`** : le nouveau plugin détecte correctement les APPLICATION_SERVICE comme implémenteurs valides des driving ports. Les 6 faux positifs qui existaient dans l'ancienne version sont éliminés.
+10. **Plus de `hexagonal:layer-isolation`** : l'ancienne version signalait des violations quand les services dépendaient de types UNCLASSIFIED (InventoryUseCases CONFLICTING). Le nouveau plugin ne produit plus ces violations. InventoryUseCases est toujours détecté comme driven port de type REPOSITORY (en raison de ses méthodes CRUD), mais cela ne génère plus de conflit bloquant.
+11. **Classification rate 95,7%** (vs 81,8%) : seuls ShopApplication et ShippingRate restent non classifiés (2/46). ShippingRate est un cas intéressant : c'est un record avec un champ Money, mais il n'est pas détecté comme VALUE_OBJECT (probablement car il n'est pas embarqué dans un agrégat).
+12. **domain.order en Zone of Pain** (D=0,92, Ca=23) : le sous-domaine order concentre Money, Address, OrderId, Quantity -- des types utilisés par tout le projet. Cette centralité rend le package fragile aux modifications.
+13. **Remédiation : 7 jours / 3 500 EUR** : les 7 violations `application-purity` sont toutes manuelles. La correction implique de remplacer `@Service` par une déclaration `@Bean` dans une classe `@Configuration`, et `@Transactional` par un mécanisme AOP déclaratif ou une configuration XML. C'est un effort réel mais optionnel à ce stade -- l'audit passe (PASSED_WITH_WARNINGS).
+14. **Conclusion** : le domaine est prêt pour la génération. Toutes les informations DDD sont inférées, la pureté du domaine est totale. Les 7 violations `application-purity` pointent un problème de pureté de la couche application (annotations Spring) qui ne bloque pas la génération. Le plugin JPA peut générer les 6 adaptateurs manquants automatiquement. L'étape 5 activera la génération pour combler les driven ports sans adaptateur.
 
 ---
 
-## Etape 5 : Generation et audit (`step/5-generated`)
+## Étape 5 : Génération et audit (`step/5-generated`)
 
 ### Description
 
 Activation des plugins HexaGlue (JPA, living-doc, audit) avec `extensions=true`.
-Toute l'infrastructure de persistence est generee automatiquement : JPA entities, embeddables,
+Toute l'infrastructure de persistence est générée automatiquement : JPA entities, embeddables,
 Spring Data repositories, MapStruct mappers, et driven port adapters.
+Les services applicatifs sont purifiés (suppression des annotations Spring) et enregistrés
+via une classe `@Configuration` dans la couche infrastructure.
 
 ### Modifications
 
 - **`pom.xml`** : ajout `<extensions>true</extensions>`, `<failOnError>false</failOnError>`,
   et 3 plugins en dependencies (hexaglue-plugin-jpa, hexaglue-plugin-living-doc, hexaglue-plugin-audit)
-- **`hexaglue.yaml`** : ajout section `plugins:` avec cles fully-qualified
+- **`hexaglue.yaml`** : ajout section `plugins:` avec clés fully-qualified
   (`io.hexaglue.plugin.jpa`, `io.hexaglue.plugin.livingdoc`, `io.hexaglue.plugin.audit.ddd`)
-  et `enableAuditing: false` pour eviter les champs d'audit dupliques
+  et `enableAuditing: false` pour éviter les champs d'audit dupliqués.
+  L'exclusion `com.acme.shop.application.**` reste supprimée (comme à l'étape 4).
+- **7 services applicatifs purifiés** : suppression de `@Service`, `@Transactional` et
+  `@Transactional(readOnly = true)` (annotations de classe et de méthode) + suppression des
+  imports `org.springframework.stereotype.Service` et `org.springframework.transaction.annotation.Transactional`.
+  Les services sont désormais des POJOs purs sans dépendance Spring.
+- **`ApplicationServiceConfig.java`** (nouveau) : classe `@Configuration` dans
+  `infrastructure/config/` qui déclare les 7 services applicatifs comme beans Spring
+  via des méthodes `@Bean`, avec injection des ports driven par constructeur.
 
-### Code genere (29 fichiers par HexaGlue + 6 MapStruct impl)
+### Code généré (29 fichiers par HexaGlue + 6 MapStruct impl)
 
 | Type | Fichiers | Exemples |
 |------|----------|----------|
@@ -407,66 +895,187 @@ Spring Data repositories, MapStruct mappers, et driven port adapters.
 | MapStruct Mappers | 6 (+6 impl) | `CustomerMapper` -> `CustomerMapperImpl` |
 | Port Adapters | 7 | `CustomerRepositoryAdapter`, `OrderRepositoryAdapter` |
 
-### Resultats
+### Résultats
 
 ```
-mvn clean compile       → BUILD SUCCESS (97 source files : 68 manuels + 29 generes)
+mvn clean compile       → BUILD SUCCESS (98 source files : 69 manuels + 29 générés)
 mvn clean verify        → BUILD SUCCESS
 ```
 
-**Audit** :
+#### Audit d'architecture
 
-| KPI | Score | Seuil | Status |
-|-----|-------|-------|--------|
-| DDD Compliance | 100% | 90% | PASS |
-| Hexagonal Architecture | 100% | 90% | PASS |
-| Dependencies | 0% | 80% | WARN |
-| Coupling | 24% | 70% | WARN |
-| Cohesion | 65% | 80% | INFO |
-| **Score global** | **63/100** | - | **Grade D** |
-| **Violations** | **0** | - | **PASS** |
+**Verdict** :
 
-**Rapports generes** :
+| Score | Grade | Status |
+|-------|-------|--------|
+| **60/100** | **D** | **PASSED_WITH_WARNINGS** |
+
+**KPIs** :
+
+| KPI | Valeur | Seuil | Status | Delta vs step 4 |
+|-----|--------|-------|--------|-----------------|
+| DDD Compliance | 95% | 90% | OK | -5% (100% → 95%) |
+| Hexagonal Architecture | 90% | 90% | OK | +25% (65% → 90%) |
+| Dependencies | 0% | 80% | CRITICAL | = |
+| Coupling | 31% | 70% | CRITICAL | = |
+| Cohesion | 63% | 80% | CRITICAL | -8% (71% → 63%) |
+
+**Progression du score** :
+
+| | Step 1 | Step 2 | Step 3 | Step 4 | **Step 5** |
+|--|--------|--------|--------|--------|-----------|
+| Score | 15/100 | 21/100 | 40/100 | 56/100 | **60/100** |
+| Grade | F | F | F | F | **D** |
+| Status | FAILED | FAILED | FAILED | PASSED | **PASSED** |
+| Violations | 37 | 30 | 18 | 7 | **3** |
+
+> **Progression du score** : 56 → 60 (+4 points). La suppression des annotations Spring dans les services applicatifs élimine les 7 violations `hexagonal:application-purity` de l'étape 4. Hexagonal Architecture remonte de 65% à 90%. En contrepartie, l'analyse élargie aux fichiers générés fait apparaître 2 violations `hexagonal:layer-isolation` et 1 violation `ddd:aggregate-boundary`. Le grade passe de F à D.
+
+**Inventaire architectural** (43 types classifiés sur 81 types totaux, taux 93,5%) :
+
+| Element | Nombre |
+|---------|--------|
+| Aggregates | 6 |
+| Entities | 2 |
+| Value Objects | 7 |
+| Identifiers | 6 |
+| Domain Events | 1 |
+| Driving Ports | 6 |
+| Driven Ports | 8 |
+| Application Services | 7 |
+
+> 104 types analysés (incluant les fichiers générés), 81 types dans le périmètre de classification,
+> 43 classifiés (93,5%). 3 types non classifiés : InventoryUseCases (CONFLICTING), ShopApplication
+> et ShippingRate (UNKNOWN).
+
+**Violations** : 3 (0 CRITICAL, 3 MAJOR)
+
+| Contrainte | Step 4 | Step 5 | Delta | Observation |
+|------------|-------:|-------:|:-----:|-------------|
+| `hexagonal:application-purity` | 7 | **0** | **-7** | Annotations Spring supprimées |
+| `hexagonal:layer-isolation` | 0 | **2** | **+2** | OrderApplicationService et ShippingApplicationService dépendent de InventoryUseCases (UNCLASSIFIED) |
+| `ddd:aggregate-boundary` | 0 | **1** | **+1** | OrderLine accessible hors de son agrégat Product |
+
+> **Disparition des 7 violations `application-purity`** : la suppression de `@Service` et `@Transactional` des 7 services applicatifs élimine toutes les violations de pureté. Les services sont désormais des POJOs purs enregistrés via `@Configuration`.
+>
+> **`hexagonal:layer-isolation`** : `InventoryUseCases` est CONFLICTING car elle est implémentée par un `CoreAppClass` (driving) ET détectée comme driven port (REPOSITORY). La conséquence : `OrderApplicationService` et `ShippingApplicationService` qui l'injectent sont en violation d'isolation de couche.
+>
+> **`ddd:aggregate-boundary`** : `OrderLine` est détecté comme accessible hors de son agrégat `Product` (référence croisée inter-agrégats). L'audit au périmètre élargi (104 types incluant les générés) détecte cette violation qui n'était pas visible à l'étape 4 (68 types seulement).
+
+**Couverture des ports** :
+
+| Port | Type | Adapter | Source |
+|------|------|---------|--------|
+| OrderUseCases | DRIVING | OrderApplicationService | manuel |
+| CustomerUseCases | DRIVING | CustomerApplicationService | manuel |
+| ProductUseCases | DRIVING | ProductApplicationService | manuel |
+| CatalogUseCases | DRIVING | CatalogApplicationService | manuel |
+| PaymentUseCases | DRIVING | PaymentApplicationService | manuel |
+| ShippingUseCases | DRIVING | ShippingApplicationService | manuel |
+| OrderRepository | DRIVEN (REPOSITORY) | OrderRepositoryAdapter | **généré** |
+| CustomerRepository | DRIVEN (REPOSITORY) | CustomerRepositoryAdapter | **généré** |
+| ProductRepository | DRIVEN (REPOSITORY) | ProductRepositoryAdapter | **généré** |
+| InventoryRepository | DRIVEN (REPOSITORY) | InventoryRepositoryAdapter | **généré** |
+| ShipmentRepository | DRIVEN (REPOSITORY) | ShipmentRepositoryAdapter | **généré** |
+| PaymentRepository | DRIVEN (REPOSITORY) | PaymentRepositoryAdapter | **généré** |
+| PaymentGateway | DRIVEN (GATEWAY) | PaymentGatewayAdapter | manuel |
+| NotificationSender | DRIVEN (EVENT_PUBLISHER) | NotificationAdapter | manuel |
+
+> **14/14 ports couverts** (100%) -- les 6 repository adapters sont générés par le plugin JPA.
+
+**Métriques** :
+
+| Métrique | Valeur | Seuil | Status | Delta vs step 4 |
+|----------|--------|-------|--------|-----------------|
+| domain.purity | 100% | ≥ 100% | OK | = |
+| aggregate.boundary | 0,00% | ≥ 80% | CRITICAL | -100% (100% → 0%) |
+| aggregate.repository.coverage | 100% | ≥ 100% | OK | = |
+| aggregate.coupling.efferent | 0.41 | ≤ 0.7 | OK | +0.06 |
+| code.complexity.average | 1.12 | ≤ 10.0 | OK | = |
+| domain.coverage | 51.16% | ≥ 30% | OK | +1.16% |
+| aggregate.avgSize | 14.33 | ≤ 20.0 | OK | = |
+| code.boilerplate.ratio | 80.20% | ≤ 50% | CRITICAL | = |
+
+> **aggregate.boundary à 0%** : c'est la régression principale dans les métriques. L'analyse au
+> périmètre élargi (104 types incluant les générés) détecte que OrderLine est accessible hors de
+> son agrégat, ce qui fait chuter la métrique de 100% à 0%. Cette violation n'était pas détectée
+> à l'étape 4 car le périmètre ne couvrait que 68 types manuels.
+
+**Rapports générés** :
 
 - `target/hexaglue/reports/audit/audit-report.html` (rapport HTML interactif)
-- `target/hexaglue/reports/audit/AUDIT-REPORT.md` (rapport Markdown)
+- `target/hexaglue/reports/audit/AUDIT-REPORT.md` (rapport Markdown avec diagramme Application Layer)
 - `target/hexaglue/reports/living-doc/README.md` (documentation architecture)
-- `target/hexaglue/reports/living-doc/domain.md` (modele domaine)
+- `target/hexaglue/reports/living-doc/domain.md` (modèle domaine)
 - `target/hexaglue/reports/living-doc/ports.md` (ports driving/driven)
 - `target/hexaglue/reports/living-doc/diagrams.md` (diagrammes)
 
+**Plan de remédiation** :
+
+| | Effort | Coût |
+|---|-------:|-------:|
+| **Total** | 2,0 jours | 1 000 EUR |
+
+| Action | Effort | Impact |
+|--------|-------:|--------|
+| Corriger la frontière d'agrégat (OrderLine) | 1,0d | 1 violation `ddd:aggregate-boundary` |
+| Corriger l'isolation de couche | 1,0d | 2 violations `hexagonal:layer-isolation` |
+
 ### Observations
 
-1. **29 fichiers generes automatiquement** remplacent les ~31 fichiers d'infrastructure manuelle
-   que l'on aurait du ecrire a la main (cf. step 4 de l'ancienne migration)
-2. **0 fichier d'infrastructure manuelle** pour la persistence -- tout est genere
-3. **DDD Compliance 100%** et **Hexagonal Architecture 100%** : l'architecture est validee
-4. **Score 63/100 (Grade D)** : les KPIs Dependencies et Coupling sont bas car l'application
-   a un couplage natural entre ses sous-domaines (Order depend de Customer, Product, etc.)
-5. **0 violations** : aucun probleme d'architecture detecte
-6. **`enableAuditing: false`** : evite la generation de champs `createdAt`/`updatedAt` dupliques
+1. **29 fichiers générés automatiquement** remplacent les ~31 fichiers d'infrastructure manuelle
+   que l'on aurait dû écrire à la main (cf. step 4 de l'ancienne migration)
+2. **0 fichier d'infrastructure manuelle** pour la persistence -- tout est généré par le plugin JPA
+3. **Score en progression** (56 → 60, grade F → D) : la purification des services applicatifs
+   (suppression `@Service` + `@Transactional`) élimine les 7 violations `application-purity`.
+   Hexagonal Architecture remonte de 65% à 90%. Le score net progresse malgré 3 nouvelles violations.
+4. **Services applicatifs purs** : les 7 services sont désormais des POJOs sans aucune dépendance
+   Spring. L'enregistrement des beans est externalisé dans `ApplicationServiceConfig.java`
+   (couche infrastructure). C'est la remédiation recommandée par l'audit de l'étape 4.
+5. **InventoryUseCases CONFLICTING** : c'est le nœud du problème. Cette interface dans `ports/in/`
+   est détectée comme driven port de type REPOSITORY (à cause des méthodes CRUD) ET implémentée par
+   un `CoreAppClass` (InventoryApplicationService). Le conflit rend le type UNCLASSIFIED, ce qui
+   déclenche les violations `layer-isolation` sur les 2 services qui l'injectent.
+6. **aggregate.boundary à 0% (CRITICAL)** : OrderLine est détecté comme accessible hors de son
+   agrégat Product. Cette violation n'apparaissait pas à l'étape 4 car le périmètre d'analyse
+   était limité aux 68 fichiers manuels. Avec les 104 types (dont les générés), la frontière
+   d'agrégat est évaluée plus strictement.
+7. **code.boilerplate.ratio 80.20% (CRITICAL)** : le ratio de boilerplate reste élevé car les
+   accesseurs getter/setter représentent une large part du code
+8. **`enableAuditing: false`** : évite la génération de champs `createdAt`/`updatedAt` dupliqués
    (les classes domaine n'ont pas de champs d'audit, c'est intentionnel)
-7. **MapStruct integre automatiquement** : le lifecycle participant de HexaGlue injecte MapStruct
-   quand le plugin JPA est present + `extensions=true`
-8. **Conclusion** : l'infrastructure est entierement generee. Il reste a verifier que l'application
-   fonctionne de bout en bout (etape 6).
+9. **MapStruct intégré automatiquement** : le lifecycle participant de HexaGlue injecte MapStruct
+   quand le plugin JPA est présent + `extensions=true`
+10. **Important : `mvn clean verify`** (et non `hexaglue:audit` seul) est nécessaire pour que l'audit
+    voie les fichiers générés. Le goal `hexaglue:audit` seul ne voit que les 69 sources manuelles.
+11. **Plus de faux positif `hexagonal:port-direction`** : comme à l'étape 4, le nouveau plugin
+    détecte correctement les APPLICATION_SERVICE comme implémenteurs valides des driving ports.
+12. **Conclusion** : l'infrastructure est entièrement générée et les services applicatifs sont
+    architecturalement purs. Il reste 3 violations (2 `layer-isolation` liées à InventoryUseCases
+    CONFLICTING, 1 `aggregate-boundary` pour OrderLine). Il reste à vérifier que l'application
+    fonctionne de bout en bout (étape 6).
 
 ---
 
-## Etape 6 : Application fonctionnelle (`main`)
+## Étape 6 : Application fonctionnelle (`main`)
 
 ### Description
 
-Validation bout en bout de l'application avec l'infrastructure generee par HexaGlue.
-Migration des identifiants `Long` vers `UUID` (pattern DDD), ajout de methodes `reconstitute()`
-pour les mappers generes, et creation d'un `InventoryController` pour initialiser les stocks.
+Validation bout en bout de l'application avec l'infrastructure générée par HexaGlue.
+Migration des identifiants `Long` vers `UUID` (pattern DDD), ajout de méthodes `reconstitute()`
+pour les mappers générés, et création d'un `InventoryController` pour initialiser les stocks.
+Les corrections de pureté applicative (suppression annotations Spring, `ApplicationServiceConfig`)
+sont alignées avec l'étape 5. De plus, `InventoryUseCases` est restructurée pour éliminer
+le statut CONFLICTING : les méthodes de stock (`reserveStock`, `releaseStock`, `shipStock`)
+sont retirées de l'interface driving port et les services consommateurs travaillent directement
+avec `InventoryRepository` (driven port). `OrderLine.setId()` est supprimé pour l'immutabilité.
 
-### Problemes resolus
+### Problèmes résolus
 
-#### 1. Strategie d'identifiants : Long → UUID
+#### 1. Stratégie d'identifiants : Long → UUID
 
-HexaGlue genere des JPA entities avec la strategie **ASSIGNED** (pas de `@GeneratedValue`).
-Les identifiants `Long` ne fonctionnaient pas car aucune valeur n'etait assignee avant la persistence.
+HexaGlue génère des JPA entities avec la stratégie **ASSIGNED** (pas de `@GeneratedValue`).
+Les identifiants `Long` ne fonctionnaient pas car aucune valeur n'était assignée avant la persistence.
 
 **Solution** : migration vers des identifiants `UUID` avec factory method `generate()` :
 ```java
@@ -478,18 +1087,18 @@ public record OrderId(UUID value) {
 ```
 
 L'application assigne les IDs dans les factory methods `create()` avant la persistence.
-La strategie ASSIGNED fonctionne correctement car les UUIDs sont pre-generes.
+La stratégie ASSIGNED fonctionne correctement car les UUIDs sont pré-générés.
 
-#### 2. Reconstitution des entites : convention `reconstitute()`
+#### 2. Reconstitution des entités : convention `reconstitute()`
 
-Le mapper genere par HexaGlue appelait `Customer.create()` pour la methode `toDomain()`,
-ce qui generait un **nouvel UUID** a chaque lecture en base, perdant l'ID original.
+Le mapper généré par HexaGlue appelait `Customer.create()` pour la méthode `toDomain()`,
+ce qui générait un **nouvel UUID** à chaque lecture en base, perdant l'ID original.
 
-**Cause** : `MapperSpecBuilder.selectBestFactoryMethod()` a un ordre de preference explicite :
-1. Methode nommee `reconstitute` (prioritaire)
-2. Methode avec le plus de parametres (fallback)
+**Cause** : `MapperSpecBuilder.selectBestFactoryMethod()` a un ordre de préférence explicite :
+1. Méthode nommée `reconstitute` (prioritaire)
+2. Méthode avec le plus de paramètres (fallback)
 
-**Solution** : ajout de `reconstitute(...)` sur les 8 classes domaine (6 agregats + OrderLine + StockMovement) :
+**Solution** : ajout de `reconstitute(...)` sur les 8 classes domaine (6 agrégats + OrderLine + StockMovement) :
 ```java
 public static Customer reconstitute(CustomerId id, String firstName, String lastName,
         Email email, String phone, Address address) {
@@ -500,34 +1109,71 @@ public static Customer reconstitute(CustomerId id, String firstName, String last
 }
 ```
 
-Le mapper genere utilise desormais `reconstitute()` et preserve tous les champs.
+Le mapper généré utilise désormais `reconstitute()` et préserve tous les champs.
 
-#### 3. Serialisation des value objects dans les reponses REST
+#### 3. Sérialisation des value objects dans les réponses REST
 
-Les controllers retournant directement des objets domaine causaient une serialisation imbriquee
+Les controllers retournant directement des objets domaine causaient une sérialisation imbriquée
 (`ProductId` → `{"value":"uuid"}` au lieu de `"uuid"`).
 
-**Solution** : creation de DTOs response (`ProductResponse`, `PaymentResponse`) et methodes
-`toResponse()` dans les controllers concernes.
+**Solution** : création de DTOs response (`ProductResponse`, `PaymentResponse`) et méthodes
+`toResponse()` dans les controllers concernés.
 
 #### 4. Endpoint d'initialisation du stock
 
 `OrderApplicationService.createOrder()` appelle `inventoryUseCases.reserveStock()` mais aucun
 endpoint ne permettait d'initialiser les stocks.
 
-**Solution** : creation de `InventoryController` avec `POST /api/inventory/initialize`.
+**Solution** : création de `InventoryController` avec `POST /api/inventory/initialize`.
+
+#### 5. InventoryUseCases CONFLICTING : refactoring architectural
+
+`InventoryUseCases` (driving port, `ports.in`) était classifiée CONFLICTING car ses 5 méthodes
+(`initializeStock`, `reserveStock`, `releaseStock`, `shipStock`, `getAvailableQuantity`)
+présentaient un pattern REPOSITORY aux yeux du classificateur. Le conflit driving/driven
+rendait le type UNCLASSIFIED, déclenchant 2 violations `hexagonal:layer-isolation` sur
+`OrderApplicationService` et `ShippingApplicationService` qui l'injectaient.
+
+**Cause** : un service applicatif (`OrderApplicationService`) dépendait d'un autre service
+via un driving port (`InventoryUseCases`) pour des opérations de stock. C'est un anti-pattern
+en architecture hexagonale — les services applicatifs doivent orchestrer les agrégats
+directement via les driven ports (repositories), pas déléguer à d'autres services.
+
+**Solution** :
+1. Retrait de `reserveStock`, `releaseStock`, `shipStock` de `InventoryUseCases` (ne garde
+   que `initializeStock` et `getAvailableQuantity`, utilisés par `InventoryController`)
+2. `OrderApplicationService` et `ShippingApplicationService` injectent `InventoryRepository`
+   (driven port) et travaillent directement avec l'agrégat `Inventory`
+3. Suppression du `@Primary` (plus de `InventoryUseCasesRepositoryAdapter` généré)
+
+#### 6. OrderLine : suppression du mutateur `setId()`
+
+`OrderLine.setId(UUID)` permettait la mutation de l'identifiant d'une entité enfant de
+l'agrégat Order. Supprimé pour garantir l'immutabilité.
 
 ### Modifications
 
-- **6 identifiants types** : `Long value` → `UUID value` + `generate()` factory
+- **6 identifiants typés** : `Long value` → `UUID value` + factory `generate()`
 - **8 classes domaine** : ajout `reconstitute()` static factory, `create()` utilise `XxxId.generate()`
-- **2 sous-entites** : `OrderLine` et `StockMovement` migrees de `Long id` vers `UUID id`
+- **2 sous-entités** : `OrderLine` et `StockMovement` migrées de `Long id` vers `UUID id`
 - **5 DTOs** : `Long` → `UUID` pour les champs d'identifiants
-- **2 DTOs crees** : `ProductResponse`, `PaymentResponse`
-- **5 controllers adaptes** : mapping via `toResponse()` avec DTOs
-- **1 controller cree** : `InventoryController` (initialisation stock + consultation)
+- **2 DTOs créés** : `ProductResponse`, `PaymentResponse`
+- **5 controllers adaptés** : mapping via `toResponse()` avec DTOs
+- **1 controller créé** : `InventoryController` (initialisation stock + consultation)
 - **`GlobalExceptionHandler`** : ajout handler `InsufficientStockException`
-- **`application.yml`** : nettoyage debug config
+- **`application.yml`** : nettoyage configuration de debug
+- **`hexaglue.yaml`** : suppression de l'exclusion `com.acme.shop.application.**`
+- **7 services applicatifs purifiés** : suppression `@Service`, `@Primary`, `@Transactional`
+  et imports Spring (même correction qu'étape 5)
+- **`ApplicationServiceConfig.java`** (nouveau) : classe `@Configuration` dans `infrastructure/config/`
+  pour l'enregistrement des 7 services applicatifs comme beans Spring
+- **`InventoryUseCases`** : retrait de `reserveStock`, `releaseStock`, `shipStock` (ne garde
+  que `initializeStock` et `getAvailableQuantity`)
+- **`OrderApplicationService`** : remplace `InventoryUseCases` par `InventoryRepository` (driven port),
+  orchestre l'agrégat `Inventory` directement pour réserver/libérer le stock
+- **`ShippingApplicationService`** : remplace `InventoryUseCases` par `InventoryRepository`,
+  orchestre l'agrégat `Inventory` directement pour expédier le stock
+- **`OrderLine`** : suppression du mutateur `setId(UUID)` (immutabilité)
 
 ### Structure finale des packages
 
@@ -544,32 +1190,36 @@ com.acme.shop/
 ├── ports/
 │   ├── in/           (7 driving ports)
 │   └── out/          (8 driven ports)
-├── application/      (7 *ApplicationService)
+├── application/      (7 *ApplicationService — classifiés APPLICATION_SERVICE, POJOs purs)
 ├── exception/        (4 exceptions + GlobalExceptionHandler)
 └── infrastructure/
+    ├── config/       (AppConfig, SecurityConfig, ApplicationServiceConfig)
     ├── web/          (6 controllers + 9 DTOs)
     └── external/     (PaymentGatewayAdapter, NotificationAdapter)
 ```
 
-**Code genere par HexaGlue** (dans `target/generated-sources/hexaglue/`) :
+**Code généré par HexaGlue** (dans `target/generated-sources/hexaglue/`) :
 ```
 infrastructure/persistence/
 ├── entity/      (8 JPA entities + 2 embeddables)
 ├── repository/  (6 Spring Data repos)
 ├── mapper/      (6 MapStruct mappers)
-└── adapter/     (7 driven port adapters)
+└── adapter/     (6 driven port adapters)
 ```
+
+> **6 adapters générés** (vs 7 avant le refactoring) : `InventoryUseCasesRepositoryAdapter` n'est plus
+> généré car `InventoryUseCases` n'est plus classifiée comme driven port.
 
 ### Test de bout en bout
 
-| # | Endpoint | Payload | Resultat |
+| # | Endpoint | Payload | Résultat |
 |---|----------|---------|----------|
-| 1 | `POST /api/customers` | JSON body | Customer cree (UUID), tous champs preserves |
-| 2 | `POST /api/products` | Request params | Product cree (UUID), DTO correct |
+| 1 | `POST /api/customers` | JSON body | Customer créé (UUID), tous champs préservés |
+| 2 | `POST /api/products` | Request params | Product créé (UUID), DTO correct |
 | 3 | `POST /api/inventory/initialize` | `productId=<UUID>&quantity=100` | HTTP 201 |
 | 4 | `GET /api/inventory/{id}/available` | - | `100` |
 | 5 | `POST /api/orders` | JSON body (customerId, items) | Order PLACED, 2×1299.99 = 2599.98 EUR |
-| 6 | `GET /api/inventory/{id}/available` | - | `98` (2 reservees) |
+| 6 | `GET /api/inventory/{id}/available` | - | `98` (2 réservées) |
 | 7 | `POST /api/payments` | JSON body (orderId, paymentMethod) | Payment AUTHORIZED |
 | 8 | `POST /api/payments/capture` | `paymentReference=PAY-xxx` | Payment CAPTURED |
 | 9 | `POST /api/shipments` | `orderId=<UUID>&carrier=DHL` | Shipment PENDING |
@@ -577,62 +1227,156 @@ infrastructure/persistence/
 | 11 | `POST /api/shipments/{tracking}/deliver` | - | Shipment DELIVERED |
 | 12 | `GET /api/orders/{id}` | - | Order **DELIVERED**, total 2599.98 EUR |
 
-### Resultats
+### Résultats
 
 ```
-mvn clean compile       → BUILD SUCCESS (100 source files : 68 manuels + 29 generes + 3 MapStruct impl)
-mvn clean verify        → BUILD SUCCESS (audit PASSED)
-mvn spring-boot:run     → Application demarre sur port 8080
+mvn clean compile       → BUILD SUCCESS (99 source files : 68 manuels + 28 générés + 3 MapStruct impl)
+mvn clean verify        → BUILD SUCCESS (audit PASSED with 1 warning)
+mvn spring-boot:run     → Application démarre sur port 8080
 curl lifecycle complet  → PASSED (customer → product → inventory → order → payment → shipment → delivery)
 ```
 
 **Audit final** :
 
-| KPI | Score | Seuil | Status |
-|-----|-------|-------|--------|
-| DDD Compliance | 100% | 90% | PASS |
-| Hexagonal Architecture | 100% | 90% | PASS |
-| Dependencies | 0% | 80% | WARN |
-| Coupling | 24% | 70% | WARN |
-| Cohesion | 66% | 80% | INFO |
-| **Score global** | **63/100** | - | **Grade D** |
-| **Violations** | **0** | - | **PASS** |
+| KPI | Valeur | Seuil | Status | Delta vs step 5 |
+|-----|--------|-------|--------|-----------------|
+| DDD Compliance | 95% | 90% | OK | = |
+| Hexagonal Architecture | **100%** | 90% | **OK** | **+10%** (90% → 100%) |
+| Dependencies | 0% | 80% | CRITICAL | = |
+| Coupling | 31% | 70% | CRITICAL | = |
+| Cohesion | 64% | 80% | WARNING | +1% (63% → 64%) |
+| **Score global** | **63/100** | - | **Grade D** | **+3** |
+| **Violations** | **1** | - | **PASSED_WITH_WARNINGS** | **-2** |
+
+**Progression du score** :
+
+| | Step 1 | Step 2 | Step 3 | Step 4 | Step 5 | **Step 6** |
+|--|--------|--------|--------|--------|--------|-----------|
+| Score | 15/100 | 21/100 | 40/100 | 56/100 | 60/100 | **63/100** |
+| Grade | F | F | F | F | D | **D** |
+| Status | FAILED | FAILED | FAILED | PASSED | PASSED | **PASSED** |
+| Violations | 37 | 30 | 18 | 7 | 3 | **1** |
+
+> **Score en progression** : 60 → 63 (+3 points). Le refactoring de `InventoryUseCases` élimine les 2 violations `hexagonal:layer-isolation` et fait passer Hexagonal Architecture de 90% à 100%. `InventoryUseCases` est désormais classifiée DRIVING_PORT (7 driving ports au lieu de 6). Il reste 1 seule violation (`ddd:aggregate-boundary` pour OrderLine).
+
+**Violations** : 1 (réduction de 3 → 1)
+
+| Contrainte | Step 5 | Step 6 | Delta | Observation |
+|------------|-------:|-------:|:-----:|-------------|
+| `hexagonal:layer-isolation` | 2 | **0** | **-2** | Éliminées par le refactoring de `InventoryUseCases` |
+| `ddd:aggregate-boundary` | 1 | **1** | = | OrderLine accessible hors de son agrégat Product |
+
+> **Élimination des violations `layer-isolation`** : `OrderApplicationService` et `ShippingApplicationService` dépendent désormais de `InventoryRepository` (DRIVEN_PORT REPOSITORY, correctement classifié) au lieu de `InventoryUseCases` (qui était CONFLICTING). Plus aucune dépendance vers un type UNCLASSIFIED.
+>
+> **`ddd:aggregate-boundary` persiste** : le classificateur associe `OrderLine` à l'agrégat `Product` (via la référence `ProductId`), alors qu'elle appartient à l'agrégat `Order`. La suppression de `setId()` n'a pas d'impact sur cette heuristique. C'est une limitation du classificateur, non remédiable côté code applicatif.
+
+**Métriques** :
+
+| Métrique | Valeur | Seuil | Status | Delta vs step 5 |
+|----------|--------|-------|--------|-----------------|
+| domain.purity | 100% | ≥ 100% | OK | = |
+| aggregate.boundary | 0,00% | ≥ 80% | CRITICAL | = |
+| aggregate.repository.coverage | 100% | ≥ 100% | OK | = |
+| aggregate.coupling.efferent | 0.41 | ≤ 0.7 | OK | = |
+| code.complexity.average | 1.11 | ≤ 10.0 | OK | -0.01 |
+| domain.coverage | 50.00% | ≥ 30% | OK | -1.16% |
+| aggregate.avgSize | 15.33 | ≤ 20.0 | OK | +1.00 |
+| code.boilerplate.ratio | 81.48% | ≤ 50% | CRITICAL | +1.28% |
+
+> **Métriques stables** : les métriques sont quasi identiques à l'étape 5. `aggregate.avgSize` augmente de 1 méthode (14.33 → 15.33) à cause des méthodes `reconstitute()` ajoutées. `domain.coverage` baisse légèrement (51.16% → 50.00%) car le nombre total de types passe de 81 à 80 (suppression de `InventoryUseCasesRepositoryAdapter` qui n'est plus généré).
+
+**Stabilité des packages** :
+
+| Package | Ca | Ce | I | A | D | Zone |
+|---------|---:|---:|----:|----:|----:|------|
+| ports.out | 16 | 17 | 0,52 | 1,00 | 0,52 | Main Sequence |
+| ports.in | 14 | 13 | 0,48 | 1,00 | 0,48 | Main Sequence |
+| domain.order | 40 | 2 | 0,05 | 0,00 | 0,95 | Zone of Pain |
+| domain.product | 20 | 1 | 0,05 | 0,00 | 0,95 | Zone of Pain |
+| domain.customer | 16 | 1 | 0,06 | 0,00 | 0,94 | Zone of Pain |
+| domain.shipping | 7 | 3 | 0,30 | 0,00 | 0,70 | Main Sequence |
+| domain.payment | 9 | 2 | 0,18 | 0,00 | 0,82 | Zone of Pain |
+| domain.inventory | 6 | 1 | 0,14 | 0,00 | 0,86 | Zone of Pain |
+| application | 0 | 28 | 1,00 | 0,00 | 0,00 | Main Sequence |
+| infrastructure.config | 0 | 15 | 1,00 | 0,00 | 0,00 | Main Sequence |
+| infrastructure.persistence | 0 | 27 | 1,00 | 0,35 | 0,35 | Main Sequence |
+| infrastructure.web | 0 | 21 | 1,00 | 0,00 | 0,00 | Main Sequence |
+| infrastructure.external | 0 | 4 | 1,00 | 0,00 | 0,00 | Main Sequence |
+
+Points notables :
+- **domain.order** (Ca=40, D=0,95) : la centralité s'accentue avec les UUIDs. Package le plus fragile du projet.
+- **ports.in** (Ca=14, vs 15 avant) : `OrderApplicationService` et `ShippingApplicationService` ne dépendent plus de `InventoryUseCases`, d'où la baisse d'une dépendance afférente.
+- **domain.inventory** (Ca=6, vs 7 avant) : une référence en moins car `InventoryUseCasesRepositoryAdapter` n'est plus généré.
+- **infrastructure.persistence** (Ce=27, vs 28 avant, A=0,35) : un adapter en moins (`InventoryUseCasesRepositoryAdapter` supprimé), abstractness en légère hausse.
+- **infrastructure.config** (Ce=15) : `ApplicationServiceConfig` — 15 dépendances efférentes (ports in/out).
 
 ### Observations
 
-1. **L'application fonctionne de bout en bout** avec l'infrastructure 100% generee par HexaGlue
-2. **La convention `reconstitute()`** est essentielle pour les mappers generes : elle evite la perte d'identite lors de la lecture en base
-3. **Les identifiants UUID** sont le pattern attendu par HexaGlue : pas besoin de `@GeneratedValue`, la strategie ASSIGNED suffit
-4. **0 fichier d'infrastructure manuelle pour la persistence** : tout est genere (entities, repos, mappers, adapters)
-5. **2 adapters manuels conserves** : `PaymentGatewayAdapter` et `NotificationAdapter` (non-persistence, non-generables)
-6. **Le score d'audit 63/100** reflète le couplage naturel d'un domaine e-commerce (Order depend de Customer, Product, Inventory, Payment, Shipping). Ce n'est pas un probleme architectural.
+1. **L'application fonctionne de bout en bout** avec l'infrastructure 100% générée par HexaGlue
+2. **La convention `reconstitute()`** est essentielle pour les mappers générés : elle évite la perte d'identité lors de la lecture en base
+3. **Les identifiants UUID** sont le pattern attendu par HexaGlue : pas besoin de `@GeneratedValue`, la stratégie ASSIGNED suffit
+4. **0 fichier d'infrastructure manuelle pour la persistence** : tout est généré (entities, repos, mappers, adapters)
+5. **2 adapters manuels conservés** : `PaymentGatewayAdapter` et `NotificationAdapter` (non-persistence, non-générables)
+6. **Score en progression : 60 → 63/100 (Grade D)** grâce au refactoring de `InventoryUseCases`.
+   Hexagonal Architecture passe à 100%. Il ne reste qu'1 violation (`aggregate-boundary`).
+7. **InventoryUseCases résolu** : en retirant les 3 méthodes de stock (`reserveStock`, `releaseStock`,
+   `shipStock`) et en faisant travailler `OrderApplicationService` et `ShippingApplicationService`
+   directement avec `InventoryRepository` (driven port), l'interface n'est plus CONFLICTING.
+   Le JPA plugin ne génère plus le `InventoryUseCasesRepositoryAdapter` parasite. Le `@Primary`
+   n'est plus nécessaire. **7 driving ports correctement classifiés** (vs 6 + 1 CONFLICTING avant).
+8. **Meilleure architecture** : les services applicatifs orchestrent désormais l'agrégat `Inventory`
+   directement via son repository, au lieu de déléguer à un autre service via un driving port.
+   C'est le pattern attendu en architecture hexagonale.
+9. **Classification rate à 95,7%** (44 types classifiés sur 80 dans le périmètre). Seulement 2 types
+   UNCLASSIFIED : `ShopApplication` (UNKNOWN) et `ShippingRate` (UNKNOWN).
+10. **`ddd:aggregate-boundary` persiste** : le classificateur associe `OrderLine` à l'agrégat `Product`
+    via la référence `ProductId`. La suppression de `setId()` n'impacte pas cette heuristique.
+    Limitation du classificateur, non remédiable côté code applicatif.
+11. **Remédiation réduite de moitié** : 1,0 jour / 500 EUR (vs 2,0 jours / 1000 EUR avant le refactoring).
 
 ---
 
 ## Bilan de la migration
 
-### Avant (step/0-legacy) vs Apres (main)
+### Avant (step/0-legacy) vs Après (main)
 
-| Critere | Legacy | Hexagonal |
+| Critère | Legacy | Hexagonal |
 |---------|--------|-----------|
 | Nombre de classes manuelles | 50 | 68 |
-| Classes d'infrastructure generees | 0 | 29 (+6 MapStruct impl) |
+| Classes d'infrastructure générées | 0 | 29 (+6 MapStruct impl) |
 | Annotations JPA dans le domaine | 9 classes | 0 |
+| Annotations Spring dans les services | 7 classes (`@Service`, `@Transactional`) | 0 (POJOs purs) |
 | Value objects | 0 | 7 (Money, Address, Email, Quantity, 3 enums) |
-| Identifiants types | 0 | 6 (OrderId, CustomerId, etc.) |
+| Identifiants typés | 0 | 6 (OrderId, CustomerId, etc. — UUID) |
 | Domain events | 0 (1 Spring event) | 1 (OrderPlacedEvent) |
 | Ports (driving) | 0 | 7 |
 | Ports (driven) | 0 | 8 |
+| Application services classifiés | 0 | 7 (APPLICATION_SERVICE) |
 | Setters dans le domaine | Partout | 0 |
-| Logique metier | Dans les services | Dans les agregats |
-| Infrastructure manuelle persistence | 6 repos Spring Data | 0 (tout genere) |
-| DDD Compliance (audit) | N/A | 100% |
+| Logique métier | Dans les services | Dans les agrégats |
+| Infrastructure manuelle persistence | 6 repos Spring Data | 0 (tout généré) |
+| DDD Compliance (audit) | N/A | 95% |
 | Hexagonal Architecture (audit) | N/A | 100% |
+| Score global | N/A | 63/100 (Grade D) |
+| Violations | N/A | 1 (`aggregate-boundary`) |
 
-### Lecons apprises
+### Problèmes identifiés et résolus par la classification des application services
 
-1. **HexaGlue fonctionne par inference** : aucune classification explicite n'est necessaire si le code est bien structure. Seules des exclusions dans `hexaglue.yaml` sont utiles.
-2. **Le domaine doit etre pur** : la suppression des annotations JPA (etape 4) est le point d'inflexion qui permet l'inference DDD complete.
-3. **Les conventions comptent** : `reconstitute()` pour les mappers, `UUID` pour les identifiants, records pour les value objects -- ces conventions structurelles sont le "langage" que HexaGlue comprend.
-4. **La migration est incrementale** : chaque etape compile et les observations guident la suivante.
-5. **Le cout de l'architecture hexagonale** (infrastructure manuelle) est elimine par la generation : 0 entities JPA, 0 mappers, 0 adapters a ecrire manuellement.
+La classification des services applicatifs (suppression de l'exclusion `application.**`) a révélé des problèmes architecturaux qui ont été corrigés à l'étape 6 :
+
+1. **`hexagonal:application-purity` (7 violations, étape 4)** → **corrigées** (étape 5) : suppression des annotations Spring des services applicatifs, externalisation dans `ApplicationServiceConfig`.
+2. **`hexagonal:layer-isolation` (2 violations, étape 5)** → **corrigées** (étape 6) : `OrderApplicationService` et `ShippingApplicationService` dépendaient de `InventoryUseCases` (CONFLICTING/UNCLASSIFIED). Résolu en les faisant travailler directement avec `InventoryRepository` (driven port).
+3. **`InventoryUseCases` CONFLICTING** → **résolu** (étape 6) : l'interface avait 5 méthodes dont 3 avec un pattern REPOSITORY. En ne gardant que 2 méthodes (`initializeStock`, `getAvailableQuantity`), l'interface est désormais classifiée DRIVING_PORT sans ambiguïté.
+4. **`ddd:aggregate-boundary` (1 violation, depuis l'étape 5)** → **non résolu** : `OrderLine` est associée à l'agrégat `Product` par le classificateur (via `ProductId`). Limitation du classificateur.
+
+### Leçons apprises
+
+1. **HexaGlue fonctionne par inférence** : aucune classification explicite n'est nécessaire si le code est bien structuré. Les exclusions dans `hexaglue.yaml` doivent être minimales.
+2. **Classifier plus révèle plus** : supprimer l'exclusion des application services expose des problèmes architecturaux cachés (InventoryUseCases double-emploi). C'est le comportement voulu.
+3. **Le domaine doit être pur** : la suppression des annotations JPA (étape 4) est le point d'inflexion qui permet l'inférence DDD complète.
+4. **Les services applicatifs doivent être purs** : la suppression des annotations Spring (`@Service`, `@Transactional`) et l'externalisation de l'enregistrement des beans dans `ApplicationServiceConfig` (couche infrastructure) élimine les violations `application-purity`.
+5. **Les conventions comptent** : `reconstitute()` pour les mappers, `UUID` pour les identifiants, records pour les value objects — ces conventions structurelles sont le « langage » que HexaGlue comprend.
+6. **La migration est incrémentale** : chaque étape compile et les observations guident la suivante.
+7. **Le coût de l'architecture hexagonale** (infrastructure manuelle) est éliminé par la génération : 0 entities JPA, 0 mappers, 0 adapters à écrire manuellement.
+8. **Les services applicatifs orchestrent les agrégats** : un service applicatif ne doit pas déléguer à un autre service via un driving port. Il doit travailler directement avec les agrégats via les driven ports (repositories). Le refactoring de `InventoryUseCases` à l'étape 6 illustre ce principe.
+9. **Le score d'audit est un indicateur, pas un objectif** : 63/100 avec 1 seule violation résiduelle (limitation du classificateur) montre une architecture hexagonale fonctionnelle et correctement structurée.

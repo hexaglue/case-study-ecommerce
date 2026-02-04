@@ -7,11 +7,7 @@ import com.acme.shop.ports.out.ProductRepository;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@Transactional(readOnly = true)
 public class CatalogApplicationService implements CatalogUseCases {
 
     private final ProductRepository productRepository;

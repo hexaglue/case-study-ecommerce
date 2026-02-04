@@ -7,11 +7,7 @@ import com.acme.shop.domain.product.ProductId;
 import com.acme.shop.ports.in.ProductUseCases;
 import com.acme.shop.ports.out.ProductRepository;
 import java.util.List;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@Transactional
 public class ProductApplicationService implements ProductUseCases {
 
     private final ProductRepository productRepository;
@@ -44,25 +40,21 @@ public class ProductApplicationService implements ProductUseCases {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Product getProduct(ProductId productId) {
         return findProductOrThrow(productId);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<Product> getActiveProducts() {
         return productRepository.findByActiveTrue();
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<Product> findByCategory(Category category) {
         return productRepository.findByCategory(category);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<Product> searchByName(String name) {
         return productRepository.findByNameContainingIgnoreCase(name);
     }

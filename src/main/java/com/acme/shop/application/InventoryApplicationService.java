@@ -5,13 +5,7 @@ import com.acme.shop.domain.product.ProductId;
 import com.acme.shop.ports.in.InventoryUseCases;
 import com.acme.shop.ports.out.InventoryRepository;
 import com.acme.shop.ports.out.ProductRepository;
-import org.springframework.context.annotation.Primary;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@Primary
-@Transactional
 public class InventoryApplicationService implements InventoryUseCases {
 
     private final InventoryRepository inventoryRepository;
@@ -37,28 +31,6 @@ public class InventoryApplicationService implements InventoryUseCases {
     }
 
     @Override
-    public void reserveStock(ProductId productId, int quantity) {
-        Inventory inventory = findInventoryOrThrow(productId);
-        inventory.reserve(quantity);
-        inventoryRepository.save(inventory);
-    }
-
-    @Override
-    public void releaseStock(ProductId productId, int quantity) {
-        Inventory inventory = findInventoryOrThrow(productId);
-        inventory.release(quantity);
-        inventoryRepository.save(inventory);
-    }
-
-    @Override
-    public void shipStock(ProductId productId, int quantity) {
-        Inventory inventory = findInventoryOrThrow(productId);
-        inventory.ship(quantity);
-        inventoryRepository.save(inventory);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
     public int getAvailableQuantity(ProductId productId) {
         return findInventoryOrThrow(productId).getAvailableQuantity();
     }

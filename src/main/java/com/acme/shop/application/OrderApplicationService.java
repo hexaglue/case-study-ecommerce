@@ -2,6 +2,7 @@ package com.acme.shop.application;
 
 import com.acme.shop.domain.customer.Customer;
 import com.acme.shop.domain.customer.CustomerId;
+import com.acme.shop.domain.inventory.Inventory;
 import com.acme.shop.domain.order.Address;
 import com.acme.shop.domain.order.Order;
 import com.acme.shop.domain.order.OrderId;
@@ -9,37 +10,33 @@ import com.acme.shop.domain.order.OrderLine;
 import com.acme.shop.domain.order.Quantity;
 import com.acme.shop.domain.product.Product;
 import com.acme.shop.exception.OrderNotFoundException;
-import com.acme.shop.ports.in.InventoryUseCases;
 import com.acme.shop.ports.in.OrderUseCases;
 import com.acme.shop.ports.out.CustomerRepository;
+import com.acme.shop.ports.out.InventoryRepository;
 import com.acme.shop.ports.out.NotificationSender;
 import com.acme.shop.ports.out.OrderRepository;
 import com.acme.shop.ports.out.ProductRepository;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@Transactional
 public class OrderApplicationService implements OrderUseCases {
 
     private final OrderRepository orderRepository;
     private final CustomerRepository customerRepository;
     private final ProductRepository productRepository;
-    private final InventoryUseCases inventoryUseCases;
+    private final InventoryRepository inventoryRepository;
     private final NotificationSender notificationSender;
 
     public OrderApplicationService(
             OrderRepository orderRepository,
             CustomerRepository customerRepository,
             ProductRepository productRepository,
-            InventoryUseCases inventoryUseCases,
+            InventoryRepository inventoryRepository,
             NotificationSender notificationSender) {
         this.orderRepository = orderRepository;
         this.customerRepository = customerRepository;
         this.productRepository = productRepository;
-        this.inventoryUseCases = inventoryUseCases;
+        this.inventoryRepository = inventoryRepository;
         this.notificationSender = notificationSender;
     }
 
@@ -61,7 +58,12 @@ public class OrderApplicationService implements OrderUseCases {
                 throw new IllegalArgumentException("Product is not active: " + product.getName());
             }
 
-            inventoryUseCases.reserveStock(product.getId(), item.quantity());
+            Inventory inventory = inventoryRepository
+                    .findByProductId(product.getId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "No inventory record for product: " + product.getId()));
+            inventory.reserve(item.quantity());
+            inventoryRepository.save(inventory);
 
             OrderLine line = OrderLine.create(
                     product.getId(),
@@ -104,7 +106,12 @@ public class OrderApplicationService implements OrderUseCases {
         Order order = findOrderOrThrow(orderId);
 
         for (OrderLine line : order.getLines()) {
-            inventoryUseCases.releaseStock(line.getProductId(), line.getQuantity().value());
+            Inventory inventory = inventoryRepository
+                    .findByProductId(line.getProductId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "No inventory record for product: " + line.getProductId()));
+            inventory.release(line.getQuantity().value());
+            inventoryRepository.save(inventory);
         }
 
         order.cancel(reason);
@@ -112,13 +119,11 @@ public class OrderApplicationService implements OrderUseCases {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Order getOrder(OrderId orderId) {
         return findOrderOrThrow(orderId);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Order getOrderByNumber(String orderNumber) {
         return orderRepository
                 .findByOrderNumber(orderNumber)
@@ -126,7 +131,6 @@ public class OrderApplicationService implements OrderUseCases {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<Order> getOrdersByCustomer(CustomerId customerId) {
         return orderRepository.findByCustomerId(customerId);
     }
