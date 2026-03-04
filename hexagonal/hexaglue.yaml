@@ -1,0 +1,22 @@
+classification:
+  exclude:
+    - "com.acme.shop.infrastructure.**"
+    - "com.acme.shop.exception.**"
+
+plugins:
+  io.hexaglue.plugin.jpa:
+    entitySuffix: "JpaEntity"
+    repositorySuffix: "JpaRepository"
+    adapterSuffix: "RepositoryAdapter"
+    generateRepositories: true
+    generateAdapters: true
+    generateEmbeddables: true
+    enableAuditing: false
+
+  io.hexaglue.plugin.rest:
+    flattenValueObjects: true
+    generateExceptionHandler: true
+    generateConfiguration: true
+
+  io.hexaglue.plugin.livingdoc:
+    outputDir: "living-doc"
