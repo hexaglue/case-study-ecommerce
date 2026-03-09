@@ -1,6 +1,6 @@
 # E-Commerce Migration Guide
 
-Step-by-step guide for migrating the Acme Shop application from a traditional
+Guide for migrating the Acme Shop application from a traditional
 layered architecture to Hexagonal Architecture with HexaGlue.
 
 ## Phase 1: Discovery

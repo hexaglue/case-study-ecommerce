@@ -16,7 +16,7 @@ plugins:
   io.hexaglue.plugin.rest:
     flattenValueObjects: true
     generateExceptionHandler: true
-    generateConfiguration: true
+    generateConfiguration: false
 
   io.hexaglue.plugin.livingdoc:
     outputDir: "living-doc"
